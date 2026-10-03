@@ -48,22 +48,28 @@
        ★ 过期时间怎么定(优先级从上到下):
          1. 手动填了 expiresAt → 用你填的这个，最高优先级。
          2. 没填 → 按 type 给一个默认值(由 getDefaultExpiry() 计算，见下面脚本):
-              closure / hours / menu / opening → 发布当天 23:59
+              closure / hours / menu / opening → 发布当天 23:59（贝尔法斯特/英国当地时间）
               event                            → 没有通用默认值，必须手动把 expiresAt 填成
                                                   "这场活动几点结束"(因为只有你知道活动几点完)
          3. 两者都没有(opening/closure/hours/menu 也手动清空、event 也没填)→ 维持原来的行为，永不过期。
+
+       ★ 时区：所有"当天 23:59"、以及所有给人看的日期时间，一律按 Europe/London
+         (贝尔法斯特/英国)当地时间算，不是打开这个页面的人自己所在的时区。夏令时(BST)/
+         冬令时(GMT)切换由浏览器自带的 Intl 时区数据自动处理，不用手动改日期规则。
      ============================================================ -->
 <!-- 
      ★ 日期时间显示规则:
        - 这里的数据存储和 JS 内部计算一律用标准 ISO 格式(如上面的例子)，不要改。
-       - 但凡是给人看的日期/时间，一律用英式格式：
+       - 但凡是给人看的日期/时间，一律用英式格式，而且一律按贝尔法斯特/英国当地时间显示：
            日期: DD/MM/YYYY，例如 17/09/2026 (不要用 09/17/2026 这种美式的)
            时间: 沿用现有站内风格，如 8am / 5:30pm
            日期+时间一起显示时: 17/09/2026 17:30
-       - 对应的格式化函数 formatUKDate() / formatUKDateTime() 已经写在下面的脚本里，
-         以后接后台/上传表单、或想在界面上显示 expiresAt 时，直接调用即可，不要自己拼 MM/DD。
+       - 对应的格式化函数 formatUKDate() / formatUKTime() / formatUKDateTime() 已经写在下面的
+         脚本里，全部已经锚定 Europe/London 时区，以后接后台/上传表单、或想在界面上显示
+         expiresAt 时，直接调用即可，不要自己拼 MM/DD，也不要用浏览器本地时间。
 -->
 <script>
+
 window.WEECUP = {
   AREA: "Belfast",
   CHECKED_AT: "11:20",
@@ -76,12 +82,107 @@ window.WEECUP = {
   //    address / postcode / hours / tags / status / verifiedAt / verifiedBy / googleMapsUrl
   //    这几个字段这次全部留空 —— 因为没有真实数据，没有编造任何新内容。
   CAFES: [
-    { id:"established",        name:"Established",       area:"Hill St · BT1",       address:"", postcode:"", ig:"https://www.instagram.com/establishedcoffee/",   lat:54.6013, lng:-5.9264, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
-    { id:"common-market",      name:"Common Market",     area:"Botanic Ave · BT7",   address:"", postcode:"", ig:"https://www.instagram.com/commonmarketbelfast/", lat:54.5836, lng:-5.9330, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
-    { id:"general-merchants",  name:"General Merchants", area:"City Centre",         address:"", postcode:"", ig:"",                                               lat:54.5975, lng:-5.9290, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
-    { id:"roast",              name:"Roast",              area:"Donegall Pass · BT7", address:"", postcode:"", ig:"https://www.instagram.com/roastbelfast/",        lat:54.5900, lng:-5.9285, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
-    { id:"neighbourhood",      name:"Neighbourhood",      area:"Ormeau Rd · BT7",     address:"", postcode:"", ig:"",                                               lat:54.5820, lng:-5.9200, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
-    { id:"bright",             name:"Bright",             area:"Ormeau · BT7",        address:"", postcode:"", ig:"",                                               lat:54.5865, lng:-5.9215, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" }
+    { id:"established-hill-st", name:"Established Coffee", area:"Cathedral Quarter", address:"54 Hill St, Belfast", postcode:"BT1 2LB", ig:"https://www.instagram.com/establishedcoffee/", lat:54.602649, lng:-5.927257, hours:{ mon:"7am–4:30pm", tue:"7am–4:30pm", wed:"7am–4:30pm", thu:"7am–4:30pm", fri:"7am–4:30pm", sat:"8am–4:30pm", sun:"8am–4:30pm" }, tags:["specialty-coffee","independent","roastery"], status:"", website:"https://established.coffee/", googleMapsUrl:"https://maps.app.goo.gl/4yt6b5kip4iyfbwV9" },
+    { id:"bakari-donegall", name:"Bakarí", area:"City Centre", address:"25 Donegall Street, Belfast", postcode:"BT1 2HA", ig:"https://www.instagram.com/bakari.bakery/", lat:54.6014791, lng:-5.9279635, hours:{ mon:"7:30am–3:30pm", tue:"7:30am–3:30pm", wed:"7:30am–3:30pm", thu:"7:30am–3:30pm", fri:"7:30am–3:30pm", sat:"8am–3:30pm", sun:"Closed" }, tags:["bakery"], status:"", website:"https://www.bakaribakery.com/home", googleMapsUrl:"https://maps.app.goo.gl/8NGK9CJhMAUC5awh6" },
+    { id:"bodega-royal", name:"Bodega Bagels", area:"City Centre", address:"129-131 Royal Ave, Belfast", postcode:"BT1 1FG", ig:"https://www.instagram.com/bodegabagelsbelfast/", lat:54.6029392, lng:-5.9301693, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:["bakery"], status:"", website:"https://www.bodegabagels.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/eRqYtUsqJU1hdhRG7" },
+    { id:"bodega-banana", name:"Bodega Bagels", area:"East Belfast", address:"Banana Block, Portview Trade Centre, 310 Newtownards Rd, Belfast", postcode:"BT4 1HE", ig:"https://www.instagram.com/bodegabagelsbelfast/", lat:null, lng:null, hours:{ mon:"", tue:"", wed:"10am–6pm", thu:"10am–6pm", fri:"10am–6pm", sat:"10am–6pm", sun:"10am–6pm" }, tags:["bakery"], status:"", website:"https://www.bodegabagels.co.uk/", googleMapsUrl:"" },
+    { id:"drip-ormeau", name:"Drip", area:"Ormeau", address:"332 Ormeau Rd, Ormeau, Belfast", postcode:"BT7 2GE", ig:"https://www.instagram.com/dripbelfast/", lat:54.6023056, lng:-5.9288106, hours:{ mon:"7am–8pm", tue:"7am–8pm", wed:"7am–8pm", thu:"7am–10:30pm", fri:"7am–10:30pm", sat:"7am–10:30pm", sun:"7am–8pm" }, tags:["specialty-coffee","brunch","independent"], status:"", website:"https://dripbelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/XT4uQPrVy9RyHnxq8" },
+    { id:"neighbourhood-donegall", name:"Neighbourhood Cafe", area:"Cathedral Quarter", address:"61, 67 Donegall St, Belfast", postcode:"BT1 2QH", ig:"https://www.instagram.com/neighbourhood.cafe/", lat:null, lng:null, hours:{ mon:"7:30am–4pm", tue:"7:30am–4pm", wed:"7:30am–4pm", thu:"7:30am–4pm", fri:"7:30am–4pm", sat:"8:30am–5pm", sun:"8:30am–5pm" }, tags:["specialty-coffee","brunch"], status:"", website:"http://www.neighbourhood.cafe/", googleMapsUrl:"https://maps.app.goo.gl/5VcmKZqztn4dfsBP6" },
+    { id:"phin-city-centre", name:"Phin Vietnamese Coffee", area:"City Centre", address:"5 Wellington Pl, Belfast", postcode:"BT1 6GA", ig:"https://www.instagram.com/phin.belfast/", lat:54.5992719, lng:-5.9327378, hours:{ mon:"8am–7pm", tue:"8am–7pm", wed:"8am–7pm", thu:"8am–7pm", fri:"8am–7pm", sat:"9am–7pm", sun:"11am–6pm" }, tags:["independent"], status:"", website:"http://www.phinbelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/dnQQ4d2QSTVp6mh56" },
+    { id:"phin-ormeau", name:"Phin Vietnamese Coffee", area:"Ormeau", address:"300 Ormeau Rd, Ormeau, Belfast", postcode:"BT7 2GE", ig:"https://www.instagram.com/phin.belfast/", lat:54.5780853, lng:-5.9174599, hours:{ mon:"9am–7pm", tue:"9am–7pm", wed:"9am–7pm", thu:"9am–7pm", fri:"9am–7pm", sat:"9am–7pm", sun:"9am–7pm" }, tags:["independent"], status:"", website:"http://www.phinbelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/X1Y85QCaD3ccGDyD9" },
+    { id:"native-queens-quay", name:"Native", area:"Titanic Quarter", address:"Queens Quay, Belfast", postcode:"BT3 9DB", ig:"https://www.instagram.com/nativecoffeeni/", lat:54.6019669, lng:-5.9186039, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–8pm", sat:"9am–4pm", sun:"9am–4pm" }, tags:[], status:"", website:"http://nativecoffeeni.com/", googleMapsUrl:"https://maps.app.goo.gl/sLNyYrYsoUNRsA8P8" },
+    { id:"HJEM", name:"HJEM.BELFAST", area:"City Centre", address:"Unit 2 BA, York St, Belfast", postcode:"BT15 1ED", ig:"https://www.instagram.com/hjem.belfast/", lat:54.6036738, lng:-5.9286975, hours:{ mon:"7:30am–3:30pm", tue:"7:30am–3:30pm", wed:"7:30am–3:30pm", thu:"7:30am–3:30pm", fri:"7:30am–3:30pm", sat:"8:30am–3pm", sun:"9:30am–2:30pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/mxYii7nJgrZBtFQ47" },
+    { id:"First Avenue", name:"First Avenue Coffee", area:"Ormeau", address:"Unit 10, 317 Ormeau Rd, Belfast", postcode:"BT7 2GB", ig:"https://www.instagram.com/firstavenuecoffeeco/", lat:54.5800034, lng:-5.9201449, hours:{ mon:"6:30am–6pm", tue:"6:30am–6pm", wed:"6:30am–8:30pm", thu:"6:30am–6pm", fri:"6:30am–6pm", sat:"6:30am–5pm", sun:"6:30am–5pm" }, tags:[], status:"", website:"https://firstavenuecoffee.co.uk/pages/our-menu", googleMapsUrl:"https://maps.app.goo.gl/hoM4quPsasFcwKo58" },
+    { id:"Audacity Coffee", name:"audacitybelfast", area:"East Belfast", address:"341 Beersbridge Road, Belfast", postcode:"BT5 5DS", ig:"https://www.instagram.com/audacitybelfast/", lat:54.5929276, lng:-5.8890314, hours:{ mon:"8am–3pm", tue:"8am–3pm", wed:"8am–3pm", thu:"8am–3pm", fri:"8am–3pm", sat:"8am–1pm", sun:"10am–2pm" }, tags:[], status:"", website:"http://audacity.coffee/", googleMapsUrl:"https://maps.app.goo.gl/jxEQt3hJBwPYc3E58" },
+    { id:"gm-ormeau", name:"General Merchants", area:"Ormeau", address:"361 Ormeau Rd, Belfast", postcode:"BT7 3GL", ig:"https://www.instagram.com/generalmerchants/", lat:54.5789851, lng:-5.9193462, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–11pm", fri:"8am–11pm", sat:"8am–11pm", sun:"9am–5pm" }, tags:[], status:"", website:"http://www.generalmerchants.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/NBuYLBKRdS7rudp66" },
+    { id:"gm-donegall", name:"General Merchants Kiosk", area:"City Centre", address:"35 Donegall Pl, Belfast", postcode:"BT1 5AD", ig:"https://www.instagram.com/generalmerchants/", lat:54.598146, lng:-5.9306891, hours:{ mon:"7:30am–4:30pm", tue:"7:30am–4:30pm", wed:"7:30am–4:30pm", thu:"7:30am–4:30pm", fri:"7:30am–4:30pm", sat:"8:30am–4:30pm", sun:"Closed" }, tags:["specialty-coffee"], status:"", website:"https://www.generalmerchants.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/1D2vqXn3Asj14zSP8" },
+    { id:"5A-stranmillis", name:"5A", area:"Stranmillis", address:"5A Lockview Road, Belfast", postcode:"BT9 5FH", ig:"https://www.instagram.com/generalmerchants/", lat:54.5733789, lng:-5.9320224, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"8am–5pm", sun:"9am–5pm" }, tags:["specialty-coffee","brunch"], status:"", website:"https://www.generalmerchants.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/hjP7pNiv4He74y6c9" },
+    { id:"gm-east", name:"General Merchants", area:"East Belfast", address:"481 Upper Newtownards Road, Belfast", postcode:"BT4 3LL", ig:"https://www.instagram.com/generalmerchants/", lat:54.5944056, lng:-5.8493868, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"8am–5pm", sun:"9am–5pm" }, tags:["specialty-coffee","brunch"], status:"", website:"https://www.generalmerchants.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/pM8MgHJQnNa1whUJ6" },
+    { id:"gm-antrim", name:"General Merchants", area:"North Belfast", address:"634 Antrim Rd, Belfast", postcode:"BT15 5GP", ig:"https://www.instagram.com/generalmerchants/", lat:54.642532, lng:-5.9363574, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"8am–5pm", sun:"9am–5pm" }, tags:["specialty-coffee","brunch"], status:"", website:"https://www.generalmerchants.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/VzSiEotmYE98rwMAA" },
+    { id:"drophopper-st", name:"Drop Hopper Coffee Roasters Belfast", area:"City Centre", address:"Unit 5, St Georges Market, Oxford St, Belfast", postcode:"BT1 3LA", ig:"https://www.instagram.com/drophoppercoffee/", lat:54.5958117, lng:-5.9215196, hours:{ mon:"7:30am–3pm", tue:"7:30am–3pm", wed:"7:30am–3pm", thu:"7:30am–3pm", fri:"7:30am–3pm", sat:"8am–3pm", sun:"9am–3pm" }, tags:["specialty-coffee","roastery"], status:"", website:"http://drophoppercoffee.com/", googleMapsUrl:"https://maps.app.goo.gl/gbpryZmQsXEXn2ec9" },
+    { id:"Kin & Folk-stranmillis", name:"Kin & Folk Bakery + Coffee", area:"Stranmillis", address:"157 Stranmillis Rd, Belfast", postcode:"BT9 5AJ", ig:"https://www.instagram.com/kinandfolkbakery/", lat:54.581536, lng:-5.9340987, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"8am–5pm", sun:"9am–5pm" }, tags:[], status:"", website:"http://www.kinandfolkbakery.com/", googleMapsUrl:"https://maps.app.goo.gl/iGX8JkxpXbtGSacC8" },
+    { id:"seven-glen", name:"Seven Coffee", area:"West Belfast", address:"7 Glen Rd, Andersonstown, Belfast", postcode:"BT11 8BA", ig:"https://www.instagram.com/seven_belfast/", lat:54.5843519, lng:-5.9794111, hours:{ mon:"7:30am–3pm", tue:"7:30am–3pm", wed:"7:30am–3pm", thu:"7:30am–3pm", fri:"7:30am–3pm", sat:"7:30am–3pm", sun:"8:30am–3pm" }, tags:["dog-friendly","independent"], status:"", website:"http://www.seven-belfast.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/GtukEF2srMWsS7Nz7" },
+    { id:"Oliveira's-ormeau", name:"Oliveira's Belfast", area:"Ormeau", address:"407 Ormeau Rd, Ormeau, Belfast", postcode:"BT7 3GP", ig:"https://www.instagram.com/oliveiras.belfast/", lat:54.5769014, lng:-5.9183674, hours:{ mon:"Closed", tue:"Closed", wed:"Closed", thu:"Closed", fri:"10am–5pm", sat:"9am–4pm", sun:"10am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/y1FaGNepPxeuijFe6" },
+    { id:"kaffe-o-ormeau", name:"Kaffe O", area:"Ormeau", address:"411 Ormeau Road, Belfast", postcode:"BT7 3GP", ig:"https://www.instagram.com/kaffeo/", lat:54.5768185, lng:-5.9182302, hours:{ mon:"7:30am–4:30pm", tue:"7:30am–4:30pm", wed:"7:30am–4:30pm", thu:"7:30am–4:30pm", fri:"7:30am–4:30pm", sat:"7:30am–4:30pm", sun:"8:30am–4:30pm" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/HUAKcaVYiRWn9a2c6" },
+    { id:"kaffe-o-Lisburn Rd", name:"Kaffe O", area:"Lisburn Rd", address:"611 Lisburn Rd, Belfast", postcode:"BT9 7GT", ig:"https://www.instagram.com/kaffeo/", lat:54.575264, lng:-5.9573224, hours:{ mon:"7:30am–4:30pm", tue:"7:30am–4:30pm", wed:"7:30am–4:30pm", thu:"7:30am–4:30pm", fri:"7:30am–4:30pm", sat:"7:30am–4:30pm", sun:"8:30am–4:30pm" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/6EkXix3zEfisoHc56" },
+    { id:"kaffe-o- botanic", name:"Kaffe O", area:"Botanic", address:"73 Botanic Ave, Belfast", postcode:"BT7 1JL", ig:"https://www.instagram.com/kaffeo/", lat:54.577317, lng:-5.9185839, hours:{ mon:"7:30am–4:30pm", tue:"7:30am–4:30pm", wed:"7:30am–4:30pm", thu:"7:30am–4:30pm", fri:"7:30am–4:30pm", sat:"8:30am–4:30pm", sun:"8:30am–4:30pm" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/PqwCYWqrM76zYy6N9" },
+    { id:"kaffe-o- cregagh", name:"Kaffe O", area:"East Belfast", address:"23 Cregagh Rd, Belfast", postcode:"BT6 8PX", ig:"https://www.instagram.com/kaffeo/", lat:54.58647, lng:-5.8996504, hours:{ mon:"7:30am–4:30pm", tue:"7:30am–4:30pm", wed:"7:30am–4:30pm", thu:"7:30am–4:30pm", fri:"7:30am–4:30pm", sat:"7:30am–4:30pm", sun:"8:30am–4:30pm" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/8EfGKDKJREKN1ik77" },
+    { id:"kaffe-o- kiosk", name:"Kaffe O", area:"City Centre", address:"9 Donegall Square N, Belfast", postcode:"BT1 5GJ", ig:"https://www.instagram.com/kaffeo/", lat:54.5974771, lng:-5.9309338, hours:{ mon:"7:30am–2:30pm", tue:"7:30am–2:30pm", wed:"7:30am–2:30pm", thu:"7:30am–2:30pm", fri:"7:30am–2:30pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/6DcZccmnYxcJ5Uez6" },
+    { id:"kaffe-o- arthur st", name:"Kaffe O", area:"City Centre", address:"16-22 Arthur St, Belfast", postcode:"BT1 4GE", ig:"https://www.instagram.com/kaffeo/", lat:54.5990038, lng:-5.927478, hours:{ mon:"", tue:"8am–3:30pm", wed:"8am–3:30pm", thu:"8am–3:30pm", fri:"8am–3:30pm", sat:"9:30am–4:30pm", sun:"Closed" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/2g54ocTHMQ98fGqYA" },
+    { id:"kaffe-o- Chichester", name:"Kaffe O", area:"City Centre", address:"65-67 Chichester St, Belfast", postcode:"BT1 4JE", ig:"https://www.instagram.com/kaffeo/", lat:54.5974954, lng:-5.9249764, hours:{ mon:"7:30am–2:30pm", tue:"7:30am–2:30pm", wed:"7:30am–2:30pm", thu:"7:30am–2:30pm", fri:"7:30am–2:30pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"http://www.kaffeo.coffee/", googleMapsUrl:"https://maps.app.goo.gl/BM9iGDTDkHMABHn77" },
+    { id:"Terrace", name:"Terrace Coffee House", area:"Queens University", address:"33-35 Malone Rd, Belfast", postcode:"BT9 6RU", ig:"https://www.instagram.com/terracecoffeebelfast/", lat:54.5808507, lng:-5.9387517, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"9am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/7jcbkL5VKMZfJGgP8" },
+    { id:"hatch", name:"Hatch", area:"West Belfast", address:"127 Falls Rd, Belfast", postcode:"BT12 6AD", ig:"https://www.instagram.com/belfasthatch/", lat:54.5957383, lng:-5.9562145, hours:{ mon:"7am–5pm", tue:"7am–5pm", wed:"7am–5pm", thu:"7am–7pm", fri:"7am–7pm", sat:"8:30am–7pm", sun:"9am–5pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/6MHPbL3sviqeFoRBA" },
+    { id:"the pocket", name:"the pocket", area:"City Centre", address:"68 Upper Church Ln, Belfast", postcode:"BT1 4QL", ig:"https://www.instagram.com/thepocketcoffee/", lat:54.598938, lng:-5.9243654, hours:{ mon:"8am–3pm", tue:"8am–3pm", wed:"8am–3pm", thu:"8am–3pm", fri:"8am–4pm", sat:"8am–5pm", sun:"8:30am–4pm" }, tags:[], status:"", website:"http://www.thepocket.coffee/", googleMapsUrl:"https://maps.app.goo.gl/H4tzdmjiGFBw25WA8" },
+    { id:"Espresso Elements", name:"Espresso Elements", area:"Lisburn Rd", address:"370A Lisburn Rd, Belfast", postcode:"BT9 6GL", ig:"https://www.instagram.com/elementsespresso/", lat:54.5730559, lng:-5.9589602, hours:{ mon:"7:30am–5pm", tue:"7:30am–5pm", wed:"7:30am–5pm", thu:"7:30am–5pm", fri:"7:30am–5pm", sat:"8am–5pm", sun:"10am–3pm" }, tags:[], status:"", website:"http://www.espressoelements.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/Wdo8aWpbqXKpqhm78" },
+    { id:"aleksandarsbakery", name:"Aleksandar's Bakery", area:"Queens University", address:"20 University Ave, Belfast", postcode:"BT7 1HY", ig:"https://www.instagram.com/aleksandarsbakery/", lat:54.5850085, lng:-5.9292242, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"8am–5pm", sun:"8am–5pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/itrP39Q2YknuaKkS9" },
+    { id:"Happy Out", name:"Happy Out Coffee", area:"East Belfast", address:"72 Newtownards Rd, Belfast", postcode:"BT4 1GW", ig:"https://www.instagram.com/happyoutcoffee/", lat:54.6006245, lng:-5.9091602, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"10am–5pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/fP2JagZYDRksD33t8" },
+    { id:"Venus Coffee House", name:"Venus Coffee House", area:"East Belfast", address:"72 Castlereagh Rd, Belfast", postcode:"BT5 5FP", ig:"https://www.instagram.com/venuscoffeehouse", lat:54.5911344, lng:-5.8980015, hours:{ mon:"7am–3pm", tue:"7am–3pm", wed:"7am–3pm", thu:"7am–3pm", fri:"7am–3pm", sat:"8:30am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/HhFEigfQGk8M3tha8" },
+    { id:"Napoleon", name:"Napoleon Coffee", area:"City Centre", address:"18 Ormeau Ave, Belfast", postcode:"BT2 8HS", ig:"https://www.instagram.com/napoleoncoffeebelfast/", lat:54.5926813, lng:-5.9289087, hours:{ mon:"8am–3pm", tue:"8am–3pm", wed:"8am–3pm", thu:"8am–3pm", fri:"8am–3pm", sat:"10am–3pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/dgG8RPXNSsEqsUtAA" },
+    { id:"Oliver's ", name:"Oliver's Coffee Bar", area:"Lisburn Rd", address:"441A Lisburn Rd, Belfast", postcode:"BT9 7EY", ig:"https://www.instagram.com/oliverscoffeebar.lisburnroad/", lat:54.5783617, lng:-5.9521782, hours:{ mon:"7am–3:30pm", tue:"7am–3:30pm", wed:"7am–3:30pm", thu:"7am–3:30pm", fri:"7am–3:30pm", sat:"7am–3:30pm", sun:"Closed" }, tags:[], status:"", website:"https://oliverscoffeebar.com/", googleMapsUrl:"https://maps.app.goo.gl/BkEM6366DtHDLABB8" },
+    { id:"Blue Train ", name:"Blue Train Café & Depot", area:"Queens University", address:"50 University St, Belfast", postcode:"BT7 1HB", ig:"https://www.instagram.com/bluetraincafedepot/", lat:54.5864396, lng:-5.9316535, hours:{ mon:"8:30am–4pm", tue:"8:30am–4pm", wed:"8:30am–4pm", thu:"8:30am–4pm", fri:"8:30am–4pm", sat:"10am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/Ws6wtVkgZfYWtQwn8" },
+    { id:"dream", name:"Dream Coffee Belfast", area:"West Belfast", address:"151a Donegall Rd., Belfast", postcode:"BT12 5NA", ig:"https://www.instagram.com/dreamcoffeebelfast/", lat:54.5890888, lng:-5.941778, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/iEqaC8D8TjogzXCD7" },
+    { id:"Unit Five", name:"Unit Five Coffee", area:"West Belfast", address:"Unit 5, 17 Balmoral Road, Belfast", postcode:"BT12 6QA", ig:"https://www.instagram.com/unit5coffee/", lat:54.5750551, lng:-5.9610453, hours:{ mon:"Closed", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/o3rNQfcqZNiFLdFF8" },
+    { id:"Sojourn ", name:"Coffee Belfast", area:"Queens University", address:"12-14 Elmwood Ave, Belfast", postcode:"BT9 6AY", ig:"https://www.instagram.com/sojourncoffee_/?hl=en", lat:54.5846187, lng:-5.9382088, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"8am–4pm" }, tags:[], status:"", website:"https://sojourncoffee.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/TaSpq1gYxbb5WA4u8" },
+    { id:"Mosaic cafe", name:"Mosaic cafe", area:"Queens University", address:"28 Elmwood Ave, Belfast", postcode:"BT9 6AY", ig:"https://www.instagram.com/mosaiccafebelfast/?hl=en", lat:54.5849544, lng:-5.9393568, hours:{ mon:"9:30am–3:30pm", tue:"9:30am–3:30pm", wed:"9:30am–3:30pm", thu:"9:30am–3:30pm", fri:"9:30am–3:30pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://mosaic-cafe.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/WFurbqirEygvtGz76" },
+    { id:"Junction Queens", name:"Junction Queens", area:"Queens University", address:"27-30 University Square, Belfast", postcode:"BT7 1NN", ig:"", lat:54.584948, lng:-5.9342391, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://www.junctionqueens.com/", googleMapsUrl:"https://maps.app.goo.gl/kKT7vDBfE5dqgwvr7" },
+    { id:"TRAIT High st", name:"TRAIT High st", area:"City Centre", address:"70-74 High St, Belfast", postcode:"BT1 2BE", ig:"https://www.instagram.com/traitcoffee/?hl=en", lat:54.6006448, lng:-5.9259026, hours:{ mon:"7:30am–4pm", tue:"7:30am–4pm", wed:"7:30am–4pm", thu:"7:30am–4pm", fri:"7:30am–4pm", sat:"7:30am–4pm", sun:"7:30am–4pm" }, tags:[], status:"", website:"https://www.traitcoffee.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/i6Xjgb8WVSj6wBLp8" },
+    { id:"TRAIT Lisburn Rd", name:"TRAIT Lisburn Rd", area:"Lisburn Rd", address:"398 Lisburn Rd, Belfast", postcode:"BT9 6GN", ig:"https://www.instagram.com/traitcoffee/?hl=en", lat:54.5724944, lng:-5.9597988, hours:{ mon:"9am–3pm", tue:"9am–3pm", wed:"9am–3pm", thu:"9am–3pm", fri:"9am–3pm", sat:"9am–3pm", sun:"9am–3pm" }, tags:[], status:"", website:"https://www.traitcoffee.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/6Fr7sMA57cHMideu8" },
+    { id:"TRAIT College Sq. East", name:"TRAIT College Sq. East", area:"City Centre", address:"14 College Square E, Belfast", postcode:"BT1 6DD", ig:"https://www.instagram.com/traitcoffee/?hl=en", lat:54.5969869, lng:-5.9345711, hours:{ mon:"9am–3pm", tue:"9am–3pm", wed:"9am–3pm", thu:"9am–3pm", fri:"9am–3pm", sat:"9am–3pm", sun:"9am–3pm" }, tags:[], status:"", website:"https://www.traitcoffee.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/SyxT1CA9GpEFZ9mW9" },
+    { id:"TRAIT Horsebox", name:"TRAIT Horsebox", area:"East Belfast", address:"91 Circular Rd, Belfast", postcode:"BT4 2GD", ig:"https://www.instagram.com/traitcoffee/?hl=en", lat:54.6056238, lng:-5.8596488, hours:{ mon:"9am–3pm", tue:"9am–3pm", wed:"9am–3pm", thu:"9am–3pm", fri:"9am–3pm", sat:"9am–3pm", sun:"9am–3pm" }, tags:[], status:"", website:"https://www.traitcoffee.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/jhcKP2DXUFPoLczA8" },
+    { id:"Terracotta ", name:"Terracotta Coffee", area:"East Belfast", address:"67 Holywood Rd, Belfast", postcode:"BT4 3BA", ig:"https://www.instagram.com/terracotta.belfast?igsh=MWZ1MTJlZndldG9rcg%3D%3D", lat:54.5985492, lng:-5.8858519, hours:{ mon:"", tue:"", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"8am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/4qsdQ6qRFNPsf8ys5" },
+    { id:"Root & Branch Coffee ", name:"Root & Branch Coffee Roastery", area:"East Belfast", address:"Unit A3, 310 Newtownards Rd, Belfast", postcode:"BT4 1HE", ig:"https://www.instagram.com/rootandbranchcoffee/", lat:54.5990485, lng:-5.8945432, hours:{ mon:"8:30am–3pm", tue:"8:30am–3pm", wed:"8:30am–3pm", thu:"8:30am–3pm", fri:"8:30am–3pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://rootandbranch.coffee/", googleMapsUrl:"https://maps.app.goo.gl/PoVgK5VL3H7ZNYfw7" },
+    { id:"toc toc", name:"Toc Toc Coffee & More Belfast", area:"Lisburn Rd", address:"235 Lisburn Rd, Belfast", postcode:"BT9 7EN", ig:"https://www.instagram.com/toctocbelfast/", lat:54.5816709, lng:-5.9480103, hours:{ mon:"9am–11pm", tue:"9am–11pm", wed:"9am–11pm", thu:"9am–11pm", fri:"9am–11pm", sat:"9am–11pm", sun:"9am–11pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/yjyi4tGBkwzx4Vfm7" },
+    { id:"Izzy’s", name:"Izzy’s", area:"Unknown", address:"58 Knockbreda Rd, Belfast", postcode:"BT6 0JB", ig:"https://www.instagram.com/izzys.belfast/", lat:54.5737505, lng:-5.9073603, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"8am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/oJZrx1esnh1BoR5H7" },
+    { id:"Harlem Cafe", name:"Harlem Cafe", area:"City Centre", address:"34 Bedford St, Belfast", postcode:"BT2 7FF", ig:"https://www.instagram.com/harlembelfast/", lat:54.5945745, lng:-5.9310306, hours:{ mon:"9am–3pm", tue:"9am–3pm", wed:"9am–3pm", thu:"9am–3pm", fri:"9am–3pm", sat:"9am–3pm", sun:"9am–2pm" }, tags:[], status:"", website:"https://www.harlemcafebelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/K3iCpMw4YuYzbTbT7" },
+    { id:"Loaf ", name:"Loaf Cafe at the Ewart Building", area:"City Centre", address:"3 Bedford St, Belfast", postcode:"BT2 7EP", ig:"https://www.instagram.com/loafcatering/", lat:54.5949633, lng:-5.9315199, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://www.loafcatering.com/", googleMapsUrl:"https://maps.app.goo.gl/CzqSPDwN2Q6JKH5N8" },
+    { id:"Canteen", name:"Canteen", area:"Ormeau", address:"322 Ormeau Rd, Ormeau, Belfast", postcode:"BT7 2GE", ig:"https://www.instagram.com/canteenbelfast/", lat:54.5758935, lng:-5.9169735, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"9am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/VkXzKZUM5gLWhSnKA" },
+    { id:"The Bobbin Coffee Shop", name:"The Bobbin Coffee Shop", area:"City Centre", address:"May St, Belfast City Hall", postcode:"BT1 5JD", ig:"", lat:54.5962324, lng:-5.9299163, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/d6CmfnBD6kdNRAYK6" },
+    { id:"Nine Squared Belfast", name:"Nine Squared Belfast", area:"City Centre", address:"The Printworks, 33 Queen St, Belfast", postcode:"BT1 6EA", ig:"https://www.instagram.com/ninesquaredcoffee/", lat:54.5983147, lng:-5.9335435, hours:{ mon:"7:30am–3:30pm", tue:"7:30am–3:30pm", wed:"7:30am–3:30pm", thu:"7:30am–3:30pm", fri:"7:30am–3:30pm", sat:"9am–3:30pm", sun:"Closed" }, tags:[], status:"", website:"https://www.ninesquaredcoffee.com/", googleMapsUrl:"https://maps.app.goo.gl/p8yFXETmLsAexoug9" },
+    { id:"CREMA Belfast", name:"CREMA Belfast", area:"City Centre", address:"26 Howard St, Belfast", postcode:"BT1 6PA", ig:"https://www.instagram.com/crema.ni/", lat:54.5957756, lng:-5.9325835, hours:{ mon:"7am–4pm", tue:"7am–4pm", wed:"7am–4pm", thu:"7am–6pm", fri:"7am–6pm", sat:"8am–4pm", sun:"8am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/KBbRRpb4gRaUNqxw8" },
+    { id:"Nica Nica ", name:"Nica Nica - Cannoli & More", area:"City Centre", address:"Great Northern Mall, 48-52 Great Victoria St, Belfast", postcode:"BT12 5AH", ig:"https://www.instagram.com/nicanica.eu/", lat:54.5945212, lng:-5.9350897, hours:{ mon:"Closed", tue:"7:30am–5pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–5pm", sat:"9:30am–4pm", sun:"Closed" }, tags:[], status:"", website:"https://www.nicanica.eu/", googleMapsUrl:"https://maps.app.goo.gl/ZW6NuLwSQ8BMSJ4T9" },
+    { id:"Cafe Melrose", name:"Cafe Melrose", area:"Lisburn Rd", address:"207a Lisburn Rd, Belfast", postcode:"BT9 7EJ", ig:"https://www.instagram.com/cafemelrosebelfast/", lat:54.5822025, lng:-5.9471586, hours:{ mon:"8:30am–4pm", tue:"8:30am–4pm", wed:"8:30am–4pm", thu:"8:30am–4pm", fri:"8:30am–4pm", sat:"10am–4pm", sun:"10am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/Adg1y7Q3rzTxqeL47" },
+    { id:"LIMA", name:"LIMA", area:"City Centre", address:"Bedford House, Bedford St, Belfast", postcode:"BT2 7FD", ig:"https://www.instagram.com/limacoffeebar", lat:54.5953589, lng:-5.9311346, hours:{ mon:"7:30am–4pm", tue:"7:30am–4pm", wed:"7:30am–4pm", thu:"7:30am–4pm", fri:"7:30am–4pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/e962p5MQLJfme8Ko7" },
+    { id:"Jukō Belfast", name:"Jukō Belfast", area:"City Centre", address:"victoria house, 15 Gloucester St, Belfast", postcode:"BT1 4LS", ig:"https://www.instagram.com/juko.coffee/", lat:54.5970387, lng:-5.9253551, hours:{ mon:"7am–4pm", tue:"7am–4pm", wed:"7am–4pm", thu:"7am–4pm", fri:"7am–4pm", sat:"9am–4pm", sun:"10am–4pm" }, tags:[], status:"", website:"https://jukobelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/R3RQ8gCPMiUWYxuu5" },
+    { id:"Linen Hall Cafe", name:"Linen Hall Cafe", area:"City Centre", address:"17 Donegall Square N, Belfast", postcode:"BT1 5GB", ig:"https://www.instagram.com/chaptercoffee_linenhall/", lat:54.5976801, lng:-5.9316109, hours:{ mon:"9:30am–4:30pm", tue:"9:30am–4:30pm", wed:"9:30am–4:30pm", thu:"9:30am–4:30pm", fri:"9:30am–4:30pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://linenhall.com/visit-us/the-linen-hall-cafe/", googleMapsUrl:"https://maps.app.goo.gl/A5nJvb9ZRvaD5Vfb6" },
+    { id:"186coffeebar", name:"186 Coffee Bar", area:"Ormeau", address:"186 Ravenhill Rd, Belfast", postcode:"BT6 8EE", ig:"https://www.instagram.com/186coffeebar/", lat:54.5908638, lng:-5.9100487, hours:{ mon:"7:30am–3:30pm", tue:"7:30am–3:30pm", wed:"7:30am–3:30pm", thu:"7:30am–3:30pm", fri:"7:30am–3:30pm", sat:"8am–4pm", sun:"9am–3pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/n5xPBdwoqogGdgCU6" },
+    { id:"Tom's", name:"Tom’s", area:"Unknown", address:"173 Ardenlee Ave, Belfast", postcode:"BT6 0AE", ig:"https://www.instagram.com/tomsyourlocal/", lat:54.5824082, lng:-5.8984151, hours:{ mon:"Closed", tue:"8:30am–4pm", wed:"8:30am–4pm", thu:"8:30am–4pm", fri:"8:30am–4pm", sat:"8:30am–4pm", sun:"10am–4pm" }, tags:[], status:"", website:"https://tomslocal.co/", googleMapsUrl:"https://maps.app.goo.gl/ge6jBCsjFzF5dp9W6" },
+    { id:"heydarlincoffee", name:"Hey Darlin’ Coffee", area:"Unknown", address:"771a Antrim Rd, Belfast", postcode:"BT15 4EP", ig:"https://www.instagram.com/heydarlincoffee/", lat:54.6458211, lng:-5.9347759, hours:{ mon:"Closed", tue:"Closed", wed:"Closed", thu:"10am–3pm", fri:"10am–3pm", sat:"10am–3pm", sun:"10am–3pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/AU4z2jMzdbtYPyJJ9" },
+    { id:"Output Espresso", name:"Output Espresso", area:"Lisburn Rd", address:"479 Lisburn Rd, Belfast", postcode:"BT9 7EZ", ig:"https://www.instagram.com/outputespresso/", lat:54.5777582, lng:-5.9529186, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"9am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/wyg3D3vzcpe7KWDL6" },
+    { id:"Brew & Bake - Lisburn Rd", name:"Brew & Bake - Lisburn Rd", area:"Lisburn Rd", address:"489 Lisburn Rd, Belfast", postcode:"BT9 7EZ", ig:"http://instagram.com/brewandbakebelfast/", lat:54.5774418, lng:-5.953179, hours:{ mon:"9am–4pm", tue:"9am–4pm", wed:"9am–4pm", thu:"9am–4pm", fri:"9am–4pm", sat:"9am–4pm", sun:"9am–4pm" }, tags:[], status:"", website:"https://www.brewandbakebelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/3qjcPBEWtyrvun7V8" },
+    { id:"Brew & Bake - Cregagh rd", name:"Brew & Bake - Cregagh rd", area:"East Belfast", address:"13 Cregagh Rd, Belfast", postcode:"BT6 8PX", ig:"http://instagram.com/brewandbakebelfast/", lat:54.586338, lng:-5.8997303, hours:{ mon:"Closed", tue:"Closed", wed:"Closed", thu:"9:30am–4:30pm", fri:"9:30am–4:30pm", sat:"9:30am–4:30pm", sun:"9:30am–4:30pm" }, tags:[], status:"", website:"https://www.brewandbakebelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/MqDQPkSZcUzipYYG8" },
+    { id:"Espresso Elements", name:"Espresso Elements", area:"Lisburn Rd", address:"370A Lisburn Rd, Belfast", postcode:"BT9 6GL", ig:"https://www.instagram.com/elementsespresso/", lat:54.5730745, lng:-5.9589387, hours:{ mon:"7:30am–5pm", tue:"7:30am–5pm", wed:"7:30am–5pm", thu:"7:30am–5pm", fri:"7:30am–5pm", sat:"8am–5pm", sun:"10am–3pm" }, tags:[], status:"", website:"https://www.brewandbakebelfast.com/", googleMapsUrl:"https://maps.app.goo.gl/RWZz3YuoyKeYfbTj7" },
+    { id:"Oh Donuts & Coffee Stranmillis", name:"Oh Donuts & Coffee Stranmillis", area:"Stranmillis", address:"145 Stranmillis Rd, Belfast", postcode:"BT9 5AJ", ig:"https://www.instagram.com/weareohdonuts/", lat:54.5799062, lng:-5.9345305, hours:{ mon:"9am–5pm", tue:"9am–8pm", wed:"9am–8pm", thu:"9am–8pm", fri:"9am–5pm", sat:"10am–5pm", sun:"Closed" }, tags:[], status:"", website:"https://www.ohdonuts.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/Vx8WiNPB6r69ejGr6" },
+    { id:"Oh Donuts & Coffee ", name:"Oh Donuts & Coffee", area:"City Centre", address:"55 Upper Arthur St, Belfast", postcode:"BT1 4HG", ig:"https://www.instagram.com/weareohdonuts/", lat:54.5970826, lng:-5.9278719, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"10am–5pm", sun:"Closed" }, tags:[], status:"", website:"https://www.ohdonuts.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/nGNjnnFGnQgaEBu37" },
+    { id:"Sinnamon Coffee", name:"Sinnamon Coffee", area:"Stranmillis", address:"80 Stranmillis Rd, Belfast", postcode:"BT9 5AD", ig:"https://www.instagram.com/sinnamon.coffee.stranmillis/", lat:54.5792328, lng:-5.9342847, hours:{ mon:"8am–7pm", tue:"8am–7pm", wed:"8am–7pm", thu:"8am–7pm", fri:"8am–7pm", sat:"9am–7pm", sun:"9am–7pm" }, tags:[], status:"", website:"https://sinnamoncoffee.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/nAeCCwaCpFXSqtxT8" },
+    { id:"marketcafebelfast", name:"Market Café", area:"South Belfast", address:"75 Saintfield Rd, Belfast", postcode:"BT8 7HN", ig:"https://www.instagram.com/marketcafebelfast/", lat:54.5578503, lng:-5.9090689, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"8am–4pm", sun:"8am–4pm" }, tags:[], status:"", website:"https://marketbelfast.squarespace.com/", googleMapsUrl:"https://maps.app.goo.gl/RBgghqvdu2C8axpV9" },
+    { id:"Grand Café Belfast", name:"Grand Café Belfast", area:"City Centre", address:"Windsor House, 9-15 Bedford St, Belfast", postcode:"BT2 7FT", ig:"https://www.instagram.com/grandcentralbelfast/", lat:54.5952976, lng:-5.931615, hours:{ mon:"7am–10pm", tue:"7am–10pm", wed:"7am–10pm", thu:"7am–10pm", fri:"7am–10pm", sat:"7am–10pm", sun:"8am–10pm" }, tags:[], status:"", website:"https://www.grandcentralhotelbelfast.com/grand-cafe/", googleMapsUrl:"https://maps.app.goo.gl/69sBUao4owGoPhBDA" },
+    { id:"Coffee Box Belfast", name:"Coffee Box Belfast", area:"Stranmillis", address:"12 Lockview Rd, Stranmillis, Belfast", postcode:"BT9 5FJ", ig:"https://www.instagram.com/coffeebox_belfast/", lat:54.5689819, lng:-5.9274088, hours:{ mon:"9am–6pm", tue:"9am–6pm", wed:"9am–6pm", thu:"9am–6pm", fri:"9am–6pm", sat:"9am–6pm", sun:"9am–6pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/yzK9YE3rZGk3H6EUA" },
+    { id:"First Floor Coffee", name:"First Floor Coffee", area:"Lisburn Rd", address:"713a Lisburn Rd, Belfast", postcode:"BT9 7GU", ig:"https://www.instagram.com/firstfloorcoffee/", lat:54.5722845, lng:-5.9607478, hours:{ mon:"8am–5pm", tue:"8am–5pm", wed:"8am–5pm", thu:"8am–5pm", fri:"8am–5pm", sat:"9am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/yATt1SVyb2bgNn2M7" },
+    { id:"Bene Café", name:"Bene Café", area:"City Centre", address:"48 Upper Arthur St, Belfast", postcode:"BT1 4GJ", ig:"https://www.instagram.com/bene_cafe_belfast/", lat:54.5968836, lng:-5.9274993, hours:{ mon:"Closed", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"9am–5pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/sKfcmuh4x3bmXBuX7" },
+    { id:"Arthur's Coffee - Arthur St", name:"Arthur's Coffee", area:"City Centre", address:"58, 60 Upper Arthur St, Belfast", postcode:"BT1 4GJ", ig:"https://www.instagram.com/arthurscoffeehouse/", lat:54.5965648, lng:-5.9275195, hours:{ mon:"7am–4pm", tue:"7am–4pm", wed:"7am–4pm", thu:"7am–4pm", fri:"7am–4pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://www.arthurscoffeecompany.com", googleMapsUrl:"https://maps.app.goo.gl/wiJmca4Lhb235zTL9" },
+    { id:"Arthur's Coffee - Gloucester St", name:"Arthur's Coffee", area:"City Centre", address:"11-13 Gloucester St, Belfast", postcode:"BT1 4LS", ig:"https://www.instagram.com/arthurscoffeehouse/", lat:54.5970028, lng:-5.9249687, hours:{ mon:"7am–4pm", tue:"7am–4pm", wed:"7am–4pm", thu:"7am–4pm", fri:"7am–4pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"https://www.arthurscoffeecompany.com", googleMapsUrl:"https://maps.app.goo.gl/ZCpXSnwjGCxhVjsk7" },
+    { id:"RV's Cold Brew Coffee", name:"RV's Cold Brew Coffee", area:"City Centre", address:"Unit 11, Great Northern Mall, 48-52 Great Victoria St, Belfast", postcode:"BT2 7GN", ig:"https://www.instagram.com/rvs_cold_brew/", lat:54.5946256, lng:-5.935088, hours:{ mon:"7am–5pm", tue:"7am–5pm", wed:"7am–5pm", thu:"7am–5pm", fri:"7am–5pm", sat:"7am–5pm", sun:"12pm–5pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/9xDZFFpXKWNWSjdv6" },
+    { id:"Hustle", name:"Hustle", area:"City Centre", address:"37-39 Rosemary St, Belfast", postcode:"BT1 1QB", ig:"https://www.instagram.com/hustle_belfast/", lat:54.6004246, lng:-5.9296226, hours:{ mon:"8am–6pm", tue:"8am–6pm", wed:"8am–6pm", thu:"8am–6pm", fri:"8am–6pm", sat:"8am–6pm", sun:"11am–5pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/Daanwr89SdDoca2T7" },
+    { id:"Foggy Brew", name:"Foggy Brew", area:"City Centre", address:"66 Berry St, Belfast", postcode:"BT1 1FJ", ig:"https://www.instagram.com/foggybrewcoffee/", lat:54.6001817, lng:-5.9331546, hours:{ mon:"9am–4pm", tue:"9am–4pm", wed:"9am–4pm", thu:"9am–4pm", fri:"9am–4pm", sat:"9am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/mju7KLeZgzeP7mDm9" },
+    { id:"Sip and Social", name:"Sip and Social Coffee Belfast", area:"West Belfast", address:"15C Glen Rd, Andersonstown, Belfast", postcode:"BT11 8BA", ig:"https://www.instagram.com/sip.andsocial?igsh=MTkyYWZqMTZxM2J1OQ%3D%3D&utm_source=qr", lat:54.5844392, lng:-5.9800178, hours:{ mon:"Closed", tue:"Closed", wed:"8:30am–4pm", thu:"8:30am–4pm", fri:"8:30am–4pm", sat:"8:30am–4pm", sun:"9am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/tm2iq4LNKdQyd7Yj8" },
+    { id:"Flax", name:"Flax Coffee Belfast", area:"West Belfast", address:"430 Falls Rd, Belfast", postcode:"BT12 6EN", ig:"https://www.instagram.com/flaxcoffeebelfast/", lat:54.5883455, lng:-5.9701224, hours:{ mon:"Closed", tue:"Closed", wed:"8:30am–3:30pm", thu:"8:30am–3:30pm", fri:"8:30am–3:30pm", sat:"9am–3:30pm", sun:"10am–2pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/zAaLGDzMaWVbRsnD6" },
+    { id:"Cuppa Café", name:"Cuppa Café", area:"West Belfast", address:"151 Andersonstown Rd, Belfast", postcode:"BT11 9BW", ig:"", lat:54.5736458, lng:-5.990843, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"9am–4pm", sun:"10am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/vFA9VTw3GRtqzv1q9" },
+    { id:"Dash", name:"Dash Coffee Belfast", area:"West Belfast", address:"189 Falls Rd, Belfast", postcode:"BT12 6AF", ig:"https://www.instagram.com/dashcoffeebelfast/", lat:54.593196, lng:-5.9596263, hours:{ mon:"7am–4pm", tue:"7am–4pm", wed:"7am–4pm", thu:"7am–4pm", fri:"7am–4pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/YcdJSayjAKmALETN7" },
+    { id:"Mo Chara's ", name:"Mo Chara's Belfast", area:"West Belfast", address:"535d Falls Rd, Andersonstown, Belfast", postcode:"BT11 9AA", ig:"https://www.instagram.com/mocharasbelfast/", lat:54.5832855, lng:-5.979412, hours:{ mon:"7am–4pm", tue:"7am–4pm", wed:"7am–4pm", thu:"7am–4pm", fri:"7am–4pm", sat:"7am–4pm", sun:"9am–3pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/RSrMhUkCGJHG3umb8" },
+    { id:"Arizona Espresso Company", name:"Arizona Espresso Company", area:"West Belfast", address:"137B Andersonstown Rd, Belfast", postcode:"BT11 9BU", ig:"https://www.instagram.com/arizonabelfast/", lat:54.5740584, lng:-5.9887936, hours:{ mon:"8am–10pm", tue:"8am–10pm", wed:"8am–10pm", thu:"8am–10pm", fri:"8am–10pm", sat:"8am–10pm", sun:"9am–10pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/ydAeRqDvukcke7z88" },
+    { id:"Ashia", name:"Ashia", area:"West Belfast", address:"166b, Finaghy Road North", postcode:"BT11 9ED", ig:"https://www.instagram.com/ashia_deli/", lat:54.5694268, lng:-5.9924991, hours:{ mon:"7:30am–2:30pm", tue:"7:30am–2:30pm", wed:"7:30am–2:30pm", thu:"7:30am–2:30pm", fri:"7:30am–2:30pm", sat:"8am–2pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/14QKySd5W2E5Vj5L8" },
+    { id:"Kaff Belfast", name:"Kaff Belfast", area:"West Belfast", address:"33 Finaghy Rd N, Belfast", postcode:"BT10 0JB", ig:"https://www.instagram.com/kaffbelfast/", lat:54.5646977, lng:-5.9869964, hours:{ mon:"7am–7pm", tue:"7am–7pm", wed:"7am–7pm", thu:"7am–7pm", fri:"7am–4pm", sat:"8am–4pm", sun:"8am–4pm" }, tags:[], status:"", website:"https://kaffbelfast.co.uk/", googleMapsUrl:"https://maps.app.goo.gl/pQydQuk4Z5gkWpWV7" },
+    { id:"White Field Coffee", name:"White Field Coffee", area:"South Belfast", address:"144 Upper Lisburn Rd, Finaghy, Belfast", postcode:"BT10 0BG", ig:"https://www.instagram.com/whitefieldcoffee/", lat:54.5606493, lng:-5.9860543, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–5pm", sat:"9am–4pm", sun:"10am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/ZV74FLfbV85vZ9RU8" },
+    { id:"The Mad Hatter Café Belfast", name:"The Mad Hatter Café Belfast", area:"Lisburn Rd", address:"2 Eglantine Ave, Belfast", postcode:"BT9 6DW", ig:"", lat:54.5825377, lng:-5.9458197, hours:{ mon:"8am–3pm", tue:"8am–3pm", wed:"8am–3pm", thu:"8am–3pm", fri:"8am–3pm", sat:"8am–4pm", sun:"8am–3pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/L3XmyrfhFhbVmvzd8" },
+    { id:"2K Coffee & Deli", name:"2K Coffee & Deli", area:"West Belfast", address:"Caffrey Ave, Glen Rd, Belfast", postcode:"BT11 8RF", ig:"https://www.instagram.com/2kcoffeedeli/", lat:54.5801321, lng:-5.999614, hours:{ mon:"9am–4pm", tue:"9am–4pm", wed:"9am–4pm", thu:"9am–4pm", fri:"9am–4pm", sat:"9am–3pm", sun:"10am–3pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/uF3jYYGg2RokdNH27" },
+    { id:"Bread Street Bakery Cafe", name:"Bread Street Bakery Cafe", area:"Lisburn Rd", address:"467 Lisburn Rd, Belfast", postcode:"BT9 7EZ", ig:"", lat:54.5777831, lng:-5.9527851, hours:{ mon:"7:30am–4:30pm", tue:"7:30am–4:30pm", wed:"7:30am–4:30pm", thu:"7:30am–4:30pm", fri:"7:30am–4:30pm", sat:"7:30am–4:30pm", sun:"7:30am–4:30pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/P3bA65FtC18Poy8r6" },
+    { id:"HuskCafe24", name:"HuskCafe24", area:"Botanic", address:"2-4 University Rd, Belfast", postcode:"BT7 1GY", ig:"https://www.instagram.com/huskcafe24/", lat:54.5878627, lng:-5.9352984, hours:{ mon:"9am–4pm", tue:"9am–4pm", wed:"9am–4pm", thu:"9am–4pm", fri:"9am–4pm", sat:"9am–4pm", sun:"9am–4pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/Hx41eC9AgTBZw5LXA" },
+    { id:"Butterfly Cafe", name:"Butterfly Cafe", area:"Botanic", address:"58 Bradbury Pl, Belfast", postcode:"BT7 1RU", ig:"", lat:54.5883157, lng:-5.935062, hours:{ mon:"8am–6pm", tue:"8am–6pm", wed:"8am–6pm", thu:"8am–6pm", fri:"8am–6pm", sat:"9am–6pm", sun:"9am–5pm" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/XULpBRnY4LBnMs8V6" },
+    { id:"Brew+Ferment", name:"Brew+Ferment", area:"Botanic", address:"20 Bradbury Pl, Belfast", postcode:"BT7 1RS", ig:"https://www.instagram.com/brewferment/", lat:54.588988, lng:-5.9344763, hours:{ mon:"8am–4pm", tue:"8am–4pm", wed:"8am–4pm", thu:"8am–4pm", fri:"8am–4pm", sat:"9am–4pm", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/UpxEpXVshHH7SYNh6" },
+    { id:"gasworkscoffeehouse", name:"gasworkscoffeehouse", area:"City Centre", address:"16 Cromac Pl, Belfast", postcode:"BT7 2JB", ig:"https://maps.app.goo.gl/qwnPK9x3zr1Wddqn9", lat:54.5907812, lng:-5.9227631, hours:{ mon:"8am–3pm", tue:"8am–3pm", wed:"8am–3pm", thu:"8am–3pm", fri:"8am–3pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/qwnPK9x3zr1Wddqn9" },
+    { id:"coopcoffee_co", name:"coopcoffee_co", area:"Unknown", address:"", postcode:"", ig:"https://www.instagram.com/coopcoffee_co/", lat:null, lng:null, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"" },
+    { id:"augies_coffee", name:"augies_coffee", area:"Unknown", address:"", postcode:"", ig:"https://www.instagram.com/augies_coffee/", lat:null, lng:null, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"" },
+    { id:"Coffee & Clo", name:"Coffee & Clo", area:"West Belfast", address:"Blackstaff Mill, 81 Springfield Rd, Belfast", postcode:"BT12 7AE", ig:"https://www.instagram.com/coffee.clo/", lat:54.5975783, lng:-5.9580025, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/xP81drSaDcgc1fhU6" }
   ],
 
   // —— 今天的动态 ——
@@ -410,9 +511,40 @@ window.WEECUP = {
     return cafeById[nameOrId] || cafeByLowerName[String(nameOrId).toLowerCase()] || null;
   }
 
+  // ---------- Belfast/UK time helpers ----------
+  // Everything expiry-related (and every user-facing date/time) is anchored to Europe/London,
+  // not the visitor's own browser timezone — a café's "8am–5pm" or "closes at 23:59" is a Belfast
+  // wall-clock fact, so it must read the same whether it's opened from Belfast or from anywhere else.
+  // Intl already knows the real IANA rule for when BST/GMT switch, so we lean on it instead of
+  // hand-coding DST date ranges.
+  var BELFAST_TZ = 'Europe/London';
+  function londonDateParts(date){
+    var parts = new Intl.DateTimeFormat('en-GB', { timeZone: BELFAST_TZ, year:'numeric', month:'2-digit', day:'2-digit' }).formatToParts(date);
+    var map = {}; parts.forEach(function(p){ map[p.type]=p.value; });
+    return { y:+map.year, m:+map.month, d:+map.day };
+  }
+  // Converts a Belfast/UK *wall-clock* date+time (e.g. "23:59 on 17/09/2026") into the correct UTC
+  // instant, automatically accounting for whether that day falls in GMT or BST.
+  function zonedWallTimeToUTC(y, m, d, hh, mm, ss, timeZone){
+    var target = Date.UTC(y, m-1, d, hh, mm, ss);
+    var guess = target;
+    for (var i=0; i<2; i++){ // two passes safely resolves the ~1hr DST-boundary edge case
+      var parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: timeZone, hour12:false,
+        year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit'
+      }).formatToParts(new Date(guess));
+      var map = {}; parts.forEach(function(p){ map[p.type]=p.value; });
+      var hour = map.hour === '24' ? 0 : +map.hour; // some engines format midnight as "24:00"
+      var shown = Date.UTC(+map.year, +map.month-1, +map.day, hour, +map.minute, +map.second);
+      guess += (target - shown);
+    }
+    return guess;
+  }
+
   // ---------- expiry: default-by-type, with manual expiresAt always taking priority ----------
   // Per-type default when no manual expiresAt is given. Anchored to the update's own publishedAt
-  // day (not "today at page-load"), so the default is a fixed, deterministic value once written.
+  // day *as a Belfast/UK calendar day* (not "today at page-load", and not the viewer's own
+  // timezone's calendar day) — so the default is a fixed, deterministic value once written.
   // "event" has no generic default — only the person entering it knows when the event ends, so
   // that must be set manually as expiresAt (this IS how "使用活动结束时间" gets implemented).
   var TYPES_DEFAULTING_TO_END_OF_DAY = ["closure","hours","menu","opening"];
@@ -421,8 +553,9 @@ window.WEECUP = {
     if(TYPES_DEFAULTING_TO_END_OF_DAY.indexOf(update.type) === -1) return null; // covers "event" and any unrecognised type
     var anchor = update.publishedAt ? new Date(update.publishedAt) : new Date();
     if(isNaN(anchor.getTime())) return null;
-    var endOfDay = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 23, 59, 0, 0);
-    return endOfDay.toISOString();
+    var day = londonDateParts(anchor); // which Belfast/UK calendar day this update was published on
+    var endOfDayUTC = zonedWallTimeToUTC(day.y, day.m, day.d, 23, 59, 0, BELFAST_TZ); // 23:59 Belfast time, correctly converted
+    return new Date(endOfDayUTC).toISOString();
   }
   // manual expiresAt → default-by-type → "" (existing behaviour: never expires). Called once per
   // update when the data is loaded, so isExpired()/liveUpdates() below need no changes at all —
@@ -432,20 +565,26 @@ window.WEECUP = {
     return getDefaultExpiry(update) || "";
   }
 
-  // ---------- UK-format date/time display (ISO stays internal-only; nothing user-facing shows MM/DD) ----------
+  // ---------- UK-format date/time display, also read in Belfast/UK time (ISO stays internal-only) ----------
   function pad2(n){ return (n<10?"0":"")+n; }
   function formatUKDate(iso){
     var d = new Date(iso); if(isNaN(d.getTime())) return "";
-    return pad2(d.getDate())+"/"+pad2(d.getMonth()+1)+"/"+d.getFullYear(); // DD/MM/YYYY
+    var p = londonDateParts(d);
+    return pad2(p.d)+"/"+pad2(p.m)+"/"+p.y; // DD/MM/YYYY, Belfast calendar day
   }
   function formatUKTime(iso){
     var d = new Date(iso); if(isNaN(d.getTime())) return "";
-    var h = d.getHours(), m = d.getMinutes(), ap = h>=12?'pm':'am', h12 = h%12; if(h12===0) h12=12;
+    var parts = new Intl.DateTimeFormat('en-GB', { timeZone: BELFAST_TZ, hour12:false, hour:'2-digit', minute:'2-digit' }).formatToParts(d);
+    var map = {}; parts.forEach(function(p){ map[p.type]=p.value; });
+    var h = map.hour==='24'?0:+map.hour, m = +map.minute, ap = h>=12?'pm':'am', h12 = h%12; if(h12===0) h12=12;
     return m===0 ? (h12+ap) : (h12+":"+pad2(m)+ap); // matches the site's existing "8am" / "5:30pm" style
   }
   function formatUKDateTime(iso){
     var d = new Date(iso); if(isNaN(d.getTime())) return "";
-    return formatUKDate(iso)+" "+pad2(d.getHours())+":"+pad2(d.getMinutes()); // e.g. 17/09/2026 17:30
+    var parts = new Intl.DateTimeFormat('en-GB', { timeZone: BELFAST_TZ, hour12:false, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' }).formatToParts(d);
+    var map = {}; parts.forEach(function(p){ map[p.type]=p.value; });
+    var h = map.hour==='24'?0:+map.hour;
+    return pad2(+map.day)+"/"+pad2(+map.month)+"/"+map.year+" "+pad2(h)+":"+pad2(+map.minute); // e.g. 17/09/2026 17:30
   }
 
   // resolve every update to its café's id up front — from here on, everything links by id, never by name string
@@ -479,6 +618,16 @@ window.WEECUP = {
   function liveUpdates(){ return UPDATES.filter(function(u){ return !isExpired(u); }); }
 
   // ---------- opening-hours parsing → Open now / Closed (never guessed if unparseable) ----------
+  // hours is now an object { mon, tue, wed, thu, fri, sat, sun } per café.
+  // All open-now computation is anchored to Europe/London (Belfast/UK time) — not the viewer's browser timezone.
+  var DAY_KEYS = ['sun','mon','tue','wed','thu','fri','sat']; // JS getDay() is 0=Sun
+  function todayHoursStr(hoursObj){
+    if(!hoursObj || typeof hoursObj !== 'object') return hoursObj||null; // fallback if old string format
+    var now = new Date();
+    var londonDay = new Intl.DateTimeFormat('en-GB',{timeZone:BELFAST_TZ,weekday:'short'}).format(now).toLowerCase().slice(0,3);
+    // 'mon','tue','wed','thu','fri','sat','sun'
+    return hoursObj[londonDay] || null;
+  }
   function parseHoursToken(tok){
     var m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(tok.trim());
     if(!m) return null;
@@ -487,22 +636,30 @@ window.WEECUP = {
     if(ap==='pm') h+=12;
     return h*60+min;
   }
-  function computeOpenNow(hoursStr){
+  function computeOpenNow(hoursObj){
+    var hoursStr = todayHoursStr(hoursObj);
     if(!hoursStr) return null;
-    var parts = hoursStr.split(/[–-]/);
+    if(hoursStr.toLowerCase() === 'closed') return false;
+    var parts = hoursStr.split('–');
     if(parts.length !== 2) return null;
     var open = parseHoursToken(parts[0]), close = parseHoursToken(parts[1]);
     if(open==null || close==null) return null;
-    var now = new Date(); var mins = now.getHours()*60+now.getMinutes();
+    // get current Belfast/UK wall-clock time in minutes
+    var timeParts = new Intl.DateTimeFormat('en-GB',{timeZone:BELFAST_TZ,hour:'2-digit',minute:'2-digit',hour12:false}).formatToParts(new Date());
+    var tMap = {}; timeParts.forEach(function(p){tMap[p.type]=p.value;});
+    var h = tMap.hour==='24'?0:+tMap.hour, mi = +tMap.minute;
+    var mins = h*60+mi;
     if(close > open) return mins >= open && mins < close;
     return mins >= open || mins < close; // overnight range
   }
   function formatHoursDisplay(c){
-    if(c.status) return null; // an explicit manual status overrides the computed/display hours line
-    if(!c.hours) return '<span class="muted">hours not listed yet</span>';
+    if(c.status) return null; // explicit manual status overrides hours display
+    var todayStr = todayHoursStr(c.hours);
+    if(!todayStr) return '<span class="muted">hours not listed yet</span>';
+    if(todayStr.toLowerCase() === 'closed') return 'Closed today';
     var open = computeOpenNow(c.hours);
     var badge = open===null ? '' : ' <span class="popenbadge '+(open?'open':'closed')+'">'+(open?'Open now':'Closed')+'</span>';
-    return esc(c.hours)+badge;
+    return esc(todayStr)+badge;
   }
 
   // ---------- Instagram handle ----------
