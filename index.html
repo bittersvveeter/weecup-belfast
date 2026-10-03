@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WeeCup Belfast — real-time café updates</title>
+<meta name="description" content="Real-time café updates for Belfast — what's open, what changed, what's fresh today. Synced from owners and Instagram, checked by WeeCup.">
+<meta property="og:title" content="WeeCup Belfast — real-time café updates">
+<meta property="og:description" content="What's open, what changed, what's fresh in Belfast cafés today.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Cellipse cx='13' cy='11' rx='8.5' ry='3.8' fill='none' stroke='%231F160E' stroke-width='1.6'/%3E%3Cpath d='M5.5 12 Q7.5 20.5 13 22.5 Q18.5 20.5 20.5 12' fill='none' stroke='%231F160E' stroke-width='1.6'/%3E%3Cpath d='M20.5 13 q4.5 1 3 5.5' fill='none' stroke='%231F160E' stroke-width='1.6'/%3E%3Cpath d='M8.5 12 l2.3 4.5 l2.2 -5.5 l2.2 5.5 l2.3 -4.5' fill='none' stroke='%234A6B2E' stroke-width='1.5'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,400..700&family=DM+Sans:opsz,wght@9..40,300..700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- ============================================================
+     ┌─────────────────────────────────────────────────────────┐
+     │  WeeCup 数据区 — CAFES(店名录/master list)+ UPDATES(动态)  │
+     └─────────────────────────────────────────────────────────┘
+
+     ▍CAFES = Belfast café master list。每家一个 { }:
+       id             唯一标识(小写、短横线),新加店时自己起一个不重复的就行,比如 "cafe-name"
+       name           café 名字(UPDATES 里的 cafe 字段要用同一个名字,大小写不敏感)
+       area           区域/街道,给用户看的(如 "Hill St · BT1")
+       address        门牌全地址 — 没有真实数据就留空 ""，不要编
+       postcode       邮编 — 没有真实数据就留空 ""，不要编
+       ig             Instagram 主页链接,没有就 ""
+       lat / lng      经纬度 — 有数字才会出现在地图上;没有就只留在名录里，不上地图
+       hours          营业时间，直接按你要的格式写好，比如 "8am–5pm"；没有可靠数据就留空 ""，不要猜
+       tags           数组，最多放 3 个，如 ["dog-friendly","bakery"]；没有真实标签就留空 []
+       status         人工状态备注（比如 "temporarily closed"），没有就 ""
+       verifiedAt     WeeCup 最近一次核实这家店信息的时间(ISO 时间字符串)，没有就 ""
+       verifiedBy     谁核实的(如 "WeeCup")，没有就 ""
+       googleMapsUrl  真实的 Google Maps 链接 — 没有真实链接就留空 ""，不要自己拼一个假的
+
+     ▍UPDATES = 今天的动态。每条一个 { }:
+       cafe         对应哪家(和 CAFES 里的 name 对上，大小写不敏感；同一家可以写好几条会自动归组显示)
+       text         这条动态说什么
+       type         颜色/分类: closure红 / hours黄 / menu绿 / event蓝 / opening青
+       source       来源: owner(商家授权) / ig(你从IG看到帮转) / weecup(你亲自核实)
+       publishedAt  这条动态是什么时候发的(ISO 时间字符串，如 "2026-09-17T10:39:00Z")
+                    页面上 "updated Nm/h ago" 是从这个时间实时算出来的，不是写死的数字
+       expiresAt    (可选)手动指定这条动态什么时候失效。留空 "" 就交给下面的默认规则；
+                    过了 expiresAt 之后不再算"当前有效"，但原始数据不会被删除。
+
+       ★ 过期时间怎么定(优先级从上到下):
+         1. 手动填了 expiresAt → 用你填的这个，最高优先级。
+         2. 没填 → 按 type 给一个默认值(由 getDefaultExpiry() 计算，见下面脚本):
+              closure / hours / menu / opening → 发布当天 23:59
+              event                            → 没有通用默认值，必须手动把 expiresAt 填成
+                                                  "这场活动几点结束"(因为只有你知道活动几点完)
+         3. 两者都没有(opening/closure/hours/menu 也手动清空、event 也没填)→ 维持原来的行为，永不过期。
+     ============================================================ -->
+<!-- 
+     ★ 日期时间显示规则:
+       - 这里的数据存储和 JS 内部计算一律用标准 ISO 格式(如上面的例子)，不要改。
+       - 但凡是给人看的日期/时间，一律用英式格式：
+           日期: DD/MM/YYYY，例如 17/09/2026 (不要用 09/17/2026 这种美式的)
+           时间: 沿用现有站内风格，如 8am / 5:30pm
+           日期+时间一起显示时: 17/09/2026 17:30
+       - 对应的格式化函数 formatUKDate() / formatUKDateTime() 已经写在下面的脚本里，
+         以后接后台/上传表单、或想在界面上显示 expiresAt 时，直接调用即可，不要自己拼 MM/DD。
+-->
+<script>
+window.WEECUP = {
+  AREA: "Belfast",
+  CHECKED_AT: "11:20",
+  INSTAGRAM: "https://www.instagram.com/",   // ← 换成你的 WeeCup IG 链接
+  CONTACT: "mailto:hello@example.com",        // ← 换成你的邮箱
+  MAP_CENTER: { lat: 54.5973, lng: -5.9301, zoom: 14 },  // 贝尔法斯特市中心,一般不用改
+
+  // —— Belfast café master list ——
+  // ⚠️ name/area/ig/lat/lng 是承接自更早设计稿的示例数据，不是核实过的真实信息（之前也提醒过）。
+  //    address / postcode / hours / tags / status / verifiedAt / verifiedBy / googleMapsUrl
+  //    这几个字段这次全部留空 —— 因为没有真实数据，没有编造任何新内容。
+  CAFES: [
+    { id:"established",        name:"Established",       area:"Hill St · BT1",       address:"", postcode:"", ig:"https://www.instagram.com/establishedcoffee/",   lat:54.6013, lng:-5.9264, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
+    { id:"common-market",      name:"Common Market",     area:"Botanic Ave · BT7",   address:"", postcode:"", ig:"https://www.instagram.com/commonmarketbelfast/", lat:54.5836, lng:-5.9330, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
+    { id:"general-merchants",  name:"General Merchants", area:"City Centre",         address:"", postcode:"", ig:"",                                               lat:54.5975, lng:-5.9290, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
+    { id:"roast",              name:"Roast",              area:"Donegall Pass · BT7", address:"", postcode:"", ig:"https://www.instagram.com/roastbelfast/",        lat:54.5900, lng:-5.9285, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
+    { id:"neighbourhood",      name:"Neighbourhood",      area:"Ormeau Rd · BT7",     address:"", postcode:"", ig:"",                                               lat:54.5820, lng:-5.9200, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" },
+    { id:"bright",             name:"Bright",             area:"Ormeau · BT7",        address:"", postcode:"", ig:"",                                               lat:54.5865, lng:-5.9215, hours:"", tags:[], status:"", verifiedAt:"", verifiedBy:"", googleMapsUrl:"" }
+  ],
+
+  // —— 今天的动态 ——
+  UPDATES: [
+    { cafe:"Established",       text:"Closing 3pm today — private event, back 7:30am tomorrow", type:"closure", source:"weecup", publishedAt:"2026-09-17T09:39:00Z", expiresAt:"" },
+    { cafe:"Common Market",     text:"New oat-milk cortado on the board · £3.20",               type:"menu",    source:"owner",  publishedAt:"2026-09-17T09:15:00Z", expiresAt:"" },
+    { cafe:"Common Market",     text:"Also back: the almond croissant, while stocks last",       type:"menu",    source:"owner",  publishedAt:"2026-09-17T09:15:00Z", expiresAt:"" },
+    { cafe:"General Merchants", text:"Open till 6pm today (usually 5)",                          type:"hours",   source:"weecup", publishedAt:"2026-09-17T08:20:00Z", expiresAt:"2026-09-17T18:00:00Z" },
+    { cafe:"Roast",             text:"Public cupping tonight 7pm · 12 seats · walk-ins 6:45",    type:"event",   source:"owner",  publishedAt:"2026-09-17T07:10:00Z", expiresAt:"2026-09-17T19:00:00Z" },
+    { cafe:"Neighbourhood",     text:"Fresh sourdough back at 10am",                             type:"opening", source:"ig",     publishedAt:"2026-09-17T06:00:00Z", expiresAt:"2026-09-17T12:00:00Z" }
+  ]
+};
+</script>
+
+<style>
+  :root{
+    --paper:#F4F0E6; --paper-2:#EDE7D6; --paper-3:#E4DCC6;
+    --ink:#1F160E; --ink-80:rgba(31,22,14,.82); --ink-60:rgba(31,22,14,.6); --ink-45:rgba(31,22,14,.45);
+    --ink-25:rgba(31,22,14,.25); --ink-12:rgba(31,22,14,.12); --ink-07:rgba(31,22,14,.07);
+    --tomato:#C13B1B; --butter:#E0A020; --moss:#4A6B2E; --river:#1B6A72; --plum:#8C5E77; --clay:#C4835B;
+    --f-fr:'Fraunces',serif; --f-sa:'DM Sans',sans-serif; --f-mo:'DM Mono',monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html{scroll-behavior:smooth;}
+  body{background:var(--paper);color:var(--ink);font-family:var(--f-sa);-webkit-font-smoothing:antialiased;line-height:1.4;}
+  .page{max-width:520px;margin:0 auto;background:var(--paper);min-height:100vh;overflow:hidden;}
+  a{color:inherit;text-decoration:none;}
+  .soon{font-family:var(--f-mo);font-size:8px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-45);border:1px solid var(--ink-12);border-radius:100px;padding:2px 7px;margin-left:6px;vertical-align:middle;}
+
+  /* ===== SCREEN 1 — search-led + priority + (map placeholder) ===== */
+  .s1-top{display:flex;align-items:center;justify-content:space-between;padding:22px 22px 0;}
+  .brand{display:flex;align-items:center;gap:10px;}
+  .brand .mk{width:30px;height:30px;flex-shrink:0;}
+  .brand .nm{font-family:var(--f-fr);font-weight:600;font-size:18px;}
+  .menu{display:flex;flex-direction:column;gap:4px;padding:6px;cursor:pointer;} .menu i{width:20px;height:2px;background:var(--ink);border-radius:2px;} .menu i:last-child{width:13px;}
+  .s1-hero{padding:30px 22px 0;}
+  .s1-hero .big{font-family:var(--f-fr);font-weight:600;font-size:34px;line-height:1.08;letter-spacing:-.02em;}
+  .s1-hero .big .acc{color:var(--moss);position:relative;white-space:nowrap;}
+  .s1-hero .big .acc::after{content:"";position:absolute;left:0;right:0;bottom:.05em;height:.08em;background:var(--moss);opacity:.32;border-radius:2px;}
+  .s1-hero .sub{font-size:13.5px;color:var(--ink-60);margin-top:13px;line-height:1.5;max-width:320px;}
+  .s1-hero .sub .h{color:var(--tomato);font-weight:600;}
+
+  /* search — real client-side search, same paper/ink visual language as the rest of the page */
+  .searchWrap{margin:20px 22px 0;position:relative;}
+  .searchBar{background:#fff;border:1px solid var(--ink-12);border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:11px;box-shadow:0 12px 30px -22px rgba(31,22,14,.4);}
+  .searchBar svg{flex-shrink:0;color:var(--ink-45);width:17px;height:17px;}
+  .searchBar input{flex:1;min-width:0;border:none;outline:none;background:none;font-family:var(--f-sa);font-size:14px;color:var(--ink);}
+  .searchBar input::placeholder{color:var(--ink-45);}
+  .searchBar .clearBtn{display:none;background:none;border:none;color:var(--ink-45);cursor:pointer;padding:4px;font-size:14px;line-height:1;}
+  .searchBar.hasQuery .clearBtn{display:block;}
+  .searchBar input:focus-visible, .searchBar:focus-within{border-color:var(--moss);}
+  .searchResults{margin-top:10px;background:#fff;border:1px solid var(--ink-12);border-radius:14px;overflow:hidden;box-shadow:0 12px 30px -22px rgba(31,22,14,.35);}
+  .searchResults[hidden]{display:none;}
+  .sr-item{display:block;width:100%;text-align:left;background:none;border:none;font:inherit;color:inherit;padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--ink-07);}
+  .sr-item:last-child{border-bottom:none;}
+  .sr-item:hover, .sr-item:focus-visible{background:var(--paper-2);}
+  .sr-item:focus-visible{outline:2px solid var(--moss);outline-offset:-2px;}
+  .sr-item .srn{font-family:var(--f-fr);font-weight:600;font-size:15px;display:flex;align-items:center;gap:7px;}
+  .sr-item .sra{font-family:var(--f-mo);font-size:9.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-45);margin-top:2px;}
+  .sr-item .sru{font-size:12px;color:var(--ink-80);margin-top:4px;line-height:1.4;}
+  .sr-item .srtags{display:flex;gap:5px;margin-top:6px;flex-wrap:wrap;}
+  .sr-item .srtags span{font-family:var(--f-mo);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-60);background:var(--paper-2);border-radius:100px;padding:2px 8px;}
+  .sr-empty{padding:18px 15px;text-align:center;font-size:12.5px;color:var(--ink-45);font-style:italic;}
+  .sr-suggest-label{font-family:var(--f-mo);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-45);padding:13px 15px 4px;}
+  .sr-suggest-row{display:flex;flex-wrap:wrap;gap:7px;padding:6px 15px 14px;}
+  .sr-chip{background:var(--paper-2);border:1px solid var(--ink-12);border-radius:100px;padding:7px 13px;font-size:12px;font-family:var(--f-sa);color:var(--ink-80);cursor:pointer;}
+  .sr-chip:hover{background:var(--paper-3);}
+  .sr-chip:focus-visible{outline:2px solid var(--moss);outline-offset:2px;}
+  .sr-open-badge{font-family:var(--f-mo);font-size:8px;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:100px;font-style:normal;}
+  .sr-open-badge.open{background:rgba(74,107,46,.12);color:var(--moss);}
+  .sr-open-badge.closed{background:rgba(193,59,27,.1);color:var(--tomato);}
+
+  .s1-chips{display:flex;gap:8px;margin:14px 22px 0;flex-wrap:wrap;}
+  .s1-chips .c{background:#fff;border:1px solid var(--ink-12);border-radius:100px;padding:8px 14px;font-size:12px;color:var(--ink-80);display:inline-flex;align-items:center;gap:6px;font-family:var(--f-sa);cursor:pointer;}
+  .s1-chips .c .d{width:5px;height:5px;border-radius:50%;background:var(--tomato);}
+  .s1-chips .c:focus-visible{outline:2px solid var(--moss);outline-offset:2px;}
+  .s1-chips .c.active{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .s1-chips .c.active .d{background:var(--paper);}
+  .s1-chips[hidden]{display:none;}
+  .today{margin:34px 22px 0;}
+  .today .th{display:flex;align-items:center;justify-content:space-between;font-family:var(--f-mo);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-45);margin-bottom:4px;}
+  .today .th .l{display:flex;align-items:center;gap:8px;} .today .th .l .dd{width:7px;height:7px;border-radius:50%;background:var(--moss);position:relative;}
+  .today .th .l .dd::after{content:"";position:absolute;inset:-3px;border-radius:50%;border:1px solid var(--moss);opacity:0;animation:ping 2.6s ease-out infinite;}
+  .today .meta{font-family:var(--f-mo);font-size:10px;color:var(--ink-45);letter-spacing:.03em;margin-bottom:12px;}
+
+  /* today's rolling list — window shows ~5 items, scrolls for the rest;
+     multiple updates for one café are grouped under its name with a dashed divider */
+  .todayScroll{max-height:480px;overflow-y:auto;-webkit-overflow-scrolling:touch;position:relative;}
+  .todayScroll::-webkit-scrollbar{width:4px;} .todayScroll::-webkit-scrollbar-thumb{background:var(--ink-12);border-radius:4px;}
+  .tgroup{padding:13px 0;border-bottom:1px solid var(--ink-07);}
+  .tgroup:last-child{border-bottom:none;}
+  .tgroup .tg-name{font-family:var(--f-fr);font-weight:600;font-size:15.5px;line-height:1.1;margin-bottom:6px;}
+  .titem{display:flex;align-items:flex-start;gap:10px;padding:6px 0;}
+  .titem + .titem{border-top:1px dashed var(--ink-12);}
+  .titem .tk{width:9px;height:9px;border-radius:2px;flex-shrink:0;margin-top:4px;}
+  .tk.closure{background:var(--tomato);} .tk.menu{background:var(--moss);} .tk.hours{background:var(--butter);} .tk.event{background:var(--river);} .tk.opening{background:var(--river);}
+  .titem .rb{flex:1;min-width:0;}
+  .titem .ru{font-size:12.5px;color:var(--ink-80);line-height:1.4;}
+  .titem .rmeta{font-family:var(--f-mo);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-45);margin-top:5px;display:flex;gap:8px;flex-wrap:wrap;}
+  .titem .rmeta .s{color:var(--moss);font-weight:500;} .titem .rmeta .s.ig{color:var(--plum);} .titem .rmeta .s.weecup{color:var(--ink-60);}
+  .todayScroll .fademore{position:sticky;bottom:0;left:0;right:0;height:26px;background:linear-gradient(transparent,var(--paper) 88%);pointer-events:none;margin-top:-26px;}
+
+  /* real map area */
+  .maparea{margin:34px 22px 0;border:1px solid var(--ink-12);border-radius:16px;overflow:hidden;background:var(--paper);}
+  .maphead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--ink-12);font-family:var(--f-mo);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-45);}
+  .maphead .mh-l{display:flex;align-items:center;gap:8px;} .maphead .mh-dd{width:7px;height:7px;border-radius:50%;background:var(--moss);}
+  #weecupMap{height:280px;width:100%;background:var(--paper-3);z-index:0;position:relative;}
+  #weecupMap::before{content:"loading map…";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--f-mo);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-45);pointer-events:none;}
+  .maplegend{display:flex;gap:16px;flex-wrap:wrap;padding:11px 16px;border-top:1px solid var(--ink-12);font-family:var(--f-mo);font-size:9px;letter-spacing:.03em;text-transform:uppercase;color:var(--ink-60);}
+  .maplegend span{display:inline-flex;align-items:center;gap:6px;} .maplegend i{width:9px;height:9px;border-radius:50%;}
+  /* leaflet marker labels */
+  .wc-marker{border:none;background:transparent;}
+  .wc-pin{width:26px;height:26px;border-radius:50% 50% 50% 3px;transform:rotate(45deg);border:2.5px solid #fff;box-shadow:0 3px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;}
+  .wc-pin span{transform:rotate(-45deg);font-family:var(--f-fr);font-weight:700;font-size:12px;color:#fff;}
+  .leaflet-popup-content-wrapper{border-radius:12px;font-family:var(--f-sa);box-shadow:0 14px 34px -18px rgba(31,22,14,.4);}
+  .leaflet-popup-tip{box-shadow:none;}
+  .wc-pop .pn{font-family:var(--f-fr);font-weight:600;font-size:15px;color:var(--ink);display:flex;align-items:center;gap:7px;}
+  .wc-pop .pa{font-family:var(--f-mo);font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-45);margin:2px 0 6px;}
+  .wc-pop .pu{font-size:12.5px;color:var(--ink-80);line-height:1.35;}
+  .wc-pop .pn-none{font-size:12px;color:var(--ink-45);font-style:italic;}
+  .wc-pop .phours{font-family:var(--f-mo);font-size:10.5px;color:var(--ink-60);margin-top:6px;}
+  .wc-pop .phours .muted{color:var(--ink-45);font-style:italic;}
+  .wc-pop .ptags{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;}
+  .wc-pop .ptags span{font-family:var(--f-mo);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-60);background:var(--paper-2);border-radius:100px;padding:2px 8px;}
+  .wc-pop .pverified{font-family:var(--f-mo);font-size:9px;color:var(--ink-45);margin-top:7px;letter-spacing:.02em;}
+  .wc-pop .pactions{display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;}
+  .wc-pop a{color:var(--tomato);font-family:var(--f-mo);font-size:10px;text-transform:uppercase;letter-spacing:.05em;display:inline-block;margin-top:0;}
+  .wc-pop .popenbadge{font-family:var(--f-mo);font-size:8.5px;letter-spacing:.05em;text-transform:uppercase;padding:2px 7px;border-radius:100px;font-weight:600;}
+  .wc-pop .popenbadge.open{background:rgba(74,107,46,.14);color:var(--moss);}
+  .wc-pop .popenbadge.closed{background:rgba(193,59,27,.12);color:var(--tomato);}
+  /* skin Leaflet's default chrome to match the page instead of its stock blue/grey look */
+  .leaflet-control-zoom{border:1px solid var(--ink-12) !important;border-radius:9px !important;overflow:hidden;box-shadow:0 6px 16px -10px rgba(31,22,14,.4) !important;}
+  .leaflet-control-zoom a{background:var(--paper) !important;color:var(--ink) !important;font-family:var(--f-sa) !important;border-color:var(--ink-12) !important;}
+  .leaflet-control-zoom a:hover{background:var(--paper-2) !important;}
+  .leaflet-control-attribution{background:rgba(244,240,230,.85) !important;color:var(--ink-45) !important;font-family:var(--f-mo) !important;font-size:8.5px !important;letter-spacing:.02em;border-radius:6px 0 0 0;}
+  .leaflet-control-attribution a{color:var(--ink-60) !important;}
+  .leaflet-popup-close-button{color:var(--ink-45) !important;}
+
+  /* ===== SCREEN 2 — dark one-pick ===== */
+  .s2{background:#16120C;color:#F1EBDC;padding:26px 0 26px;margin-top:0;}
+  .s2 .k{font-family:var(--f-mo);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:#8f8874;padding:0 22px;}
+  .s2 .t{font-family:var(--f-fr);font-weight:600;font-size:27px;line-height:1.05;letter-spacing:-.01em;padding:8px 22px 0;}
+  .s2 .st{font-size:12.5px;color:#a8a08c;padding:5px 22px 0;}
+  .s2-hero{margin:18px 22px 0;border-radius:18px;overflow:hidden;position:relative;height:230px;background:linear-gradient(160deg,#42562f,#241a10);}
+  .s2-hero .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#ffffff26;font-family:var(--f-mo);font-size:10px;letter-spacing:.1em;}
+  .s2-hero .bd{position:absolute;top:14px;left:14px;background:#96d47f;color:#16120C;font-size:10px;font-weight:700;padding:5px 11px;border-radius:100px;}
+  .s2-hero .info{position:absolute;left:0;right:0;bottom:0;padding:17px;background:linear-gradient(transparent,rgba(22,18,12,.94));}
+  .s2-hero .info .n{font-family:var(--f-fr);font-weight:600;font-size:23px;}
+  .s2-hero .info .m{font-size:12.5px;color:#ded7c5;margin-top:3px;}
+  .s2-hero .info .tt{display:inline-flex;margin-top:10px;gap:8px;font-family:var(--f-mo);font-size:8.5px;letter-spacing:.06em;color:#bce0ac;text-transform:uppercase;}
+  .s2-alt{padding:18px 22px 0;}
+  .s2-alt .ah{font-family:var(--f-mo);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:#7d7767;margin-bottom:11px;}
+  .s2-pill{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #ffffff10;}
+  .s2-pill:last-child{border:none;}
+  .s2-pill .d{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+  .s2-pill .pn{font-family:var(--f-fr);font-weight:600;font-size:14.5px;flex:1;}
+  .s2-pill .pm{font-size:11.5px;color:#a8a08c;}
+
+  /* ===== SCREEN 3 — café namecards ===== */
+  .s3{padding:26px 0 6px;}
+  .s3-h{padding:0 22px 4px;}
+  .s3-h .k{font-family:var(--f-mo);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-45);}
+  .s3-h .t{font-family:var(--f-fr);font-weight:600;font-size:24px;letter-spacing:-.01em;margin-top:7px;}
+  .s3-h .s{font-size:12.5px;color:var(--ink-60);margin-top:4px;}
+  .s3-grid{padding:18px 22px 0;display:flex;flex-direction:column;gap:14px;}
+  .card{border:1px solid var(--ink-12);border-radius:16px;overflow:hidden;background:#fff;}
+  .card .ct{display:flex;align-items:stretch;}
+  .card .seal{width:74px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#fff;position:relative;}
+  .card .seal .in{font-family:var(--f-fr);font-weight:700;font-size:32px;line-height:1;}
+  .card .seal .st{position:absolute;bottom:9px;width:11px;height:11px;border-radius:50%;border:2px solid #fff;}
+  .card .cbody{flex:1;padding:14px 16px;min-width:0;}
+  .card .cn{font-family:var(--f-fr);font-weight:600;font-size:18px;line-height:1.05;}
+  .card .cloc{font-family:var(--f-mo);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-45);margin-top:4px;}
+  .card .cl{display:flex;align-items:flex-start;gap:8px;margin-top:10px;font-size:13px;color:var(--ink-80);line-height:1.35;}
+  .card .cl .ld{width:8px;height:8px;border-radius:2px;flex-shrink:0;margin-top:4px;}
+  .card .cfoot{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--ink-07);background:var(--paper-2);}
+  .card .src{font-family:var(--f-mo);font-size:8.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-45);}
+
+  /* ===== SCREEN 4 — info distribution index ===== */
+  .s4{padding:0;background:var(--paper);margin:34px 22px 0;border-top:1px solid var(--ink-12);padding-top:20px;}
+  .s4-h{padding:0 0 14px;display:flex;align-items:center;justify-content:space-between;font-family:var(--f-mo);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-45);}
+  .s4-idx{padding:0;}
+  /* Tier-3 style: category header row, click to expand-in-place, one open at a time */
+  .t3-group{border-top:1px solid var(--ink-12);}
+  .t3-group:last-child{border-bottom:1px solid var(--ink-12);}
+  .t3-row{display:flex;align-items:center;justify-content:space-between;padding:15px 0;cursor:pointer;background:none;border:none;width:100%;text-align:left;font:inherit;color:inherit;}
+  .t3-row:focus-visible{outline:2px solid var(--moss);outline-offset:2px;}
+  .t3-row .cl{display:flex;align-items:center;gap:11px;min-width:0;}
+  .t3-row .tk{width:11px;height:11px;border-radius:2px;flex-shrink:0;}
+  .t3-row .nm{font-family:var(--f-fr);font-weight:600;font-size:19px;letter-spacing:-.005em;}
+  .t3-row .rt{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .t3-row .leader{width:26px;border-bottom:1px dotted var(--ink-25);height:0;margin-bottom:4px;}
+  .t3-row .cnt{font-family:var(--f-mo);font-size:12px;color:var(--ink-60);letter-spacing:.03em;}
+  .t3-row .cnt b{font-weight:600;color:var(--ink);}
+  .t3-row .chev{width:14px;height:14px;color:var(--ink-45);transition:transform .2s ease;flex-shrink:0;}
+  .t3-group.open .t3-row .chev{transform:rotate(90deg);}
+  .t3-panel{max-height:0;overflow:hidden;transition:max-height .28s ease;}
+  .t3-group.open .t3-panel{max-height:900px;}
+  .t3-panel-inner{padding:0 0 16px 22px;border-left:2px solid var(--ink-12);margin-left:5px;display:flex;flex-direction:column;gap:14px;}
+  .t3-pitem{display:block;}
+  .t3-pitem .pn{font-family:var(--f-fr);font-weight:700;font-size:15px;}
+  .t3-pitem .pt{font-size:13px;color:var(--ink-80);margin-top:2px;line-height:1.4;}
+  .t3-pitem .pm{display:flex;align-items:center;gap:7px;margin-top:7px;font-family:var(--f-mo);font-size:9.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-45);}
+  .t3-pitem .pm .pdot{width:6px;height:6px;border-radius:50%;flex-shrink:0;}
+  .t3-pitem .pm .badge{display:inline-flex;align-items:center;gap:4px;background:var(--ink);color:var(--paper);border-radius:100px;padding:2px 8px 2px 3px;font-weight:600;}
+  .t3-pitem .pm .badge .bc{width:14px;height:14px;border-radius:50%;background:rgba(244,240,230,.18);display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;}
+  .t3-pitem .pm .badge.owner{background:var(--moss);} .t3-pitem .pm .badge.ig{background:var(--plum);}
+  .s4-cta{margin:20px 0 0;background:var(--ink);color:var(--paper);border-radius:14px;padding:17px 18px;}
+  .s4-cta .h{font-family:var(--f-fr);font-weight:600;font-size:16px;}
+  .s4-cta .p{font-size:12px;color:rgba(244,240,230,.7);margin-top:5px;line-height:1.45;}
+  .s4-cta .btns{display:flex;gap:9px;margin-top:14px;}
+  .s4-cta .btns a{flex:1;text-align:center;border-radius:9px;padding:11px;font-size:12px;font-weight:600;}
+  .s4-cta .btns .ig{background:var(--tomato);color:#fff;}
+  .s4-cta .btns .em{background:rgba(244,240,230,.12);color:var(--paper);}
+
+  /* footer */
+  .foot{padding:30px 22px 34px;text-align:center;background:var(--paper);border-top:1px solid var(--ink-12);margin-top:34px;}
+  .foot .fl{font-family:var(--f-fr);font-weight:600;font-size:15px;}
+  .foot .fs{font-family:var(--f-mo);font-size:9.5px;letter-spacing:.06em;color:var(--ink-45);margin-top:6px;line-height:1.7;}
+  .foot .fs a{color:var(--tomato);}
+
+  @keyframes ping{0%{transform:scale(.8);opacity:.6;}100%{transform:scale(2.6);opacity:0;}}
+
+  /* scroll reveal: each major section fades + rises into place as it enters view */
+  .reveal{opacity:0;transform:translateY(20px);transition:opacity .7s cubic-bezier(.22,.7,.2,1),transform .7s cubic-bezier(.22,.7,.2,1);}
+  .reveal.in{opacity:1;transform:none;}
+  @media (prefers-reduced-motion:reduce){
+    .reveal{opacity:1;transform:none;transition:none;}
+  }
+  @media (prefers-reduced-motion:reduce){.today .th .l .dd::after{animation:none;}}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ===================== SCREEN 1 ===================== -->
+  <div class="s1-top">
+    <div class="brand">
+      <svg class="mk" viewBox="0 0 30 30" fill="none"><path d="M21 3 A11.5 11.5 0 0 1 26 12 L21 12 Z" fill="#C13B1B"/><ellipse cx="14" cy="12" rx="9" ry="4" stroke="#1F160E" stroke-width="1.7"/><path d="M6 13 Q8 22 14 24 Q20 22 22 13" stroke="#1F160E" stroke-width="1.7" fill="none"/><path d="M22 14 q5 1 3 6" stroke="#1F160E" stroke-width="1.7" fill="none"/><path d="M9 13 l2.5 5 l2.5 -6 l2.5 6 l2.5 -5" stroke="#4A6B2E" stroke-width="1.6" fill="none" stroke-linejoin="round"/></svg>
+      <span class="nm">WeeCup</span>
+    </div>
+    <div class="menu"><i></i><i></i><i></i></div>
+  </div>
+
+  <div class="s1-hero reveal">
+    <div class="big">Real-time café updates<br>for <span class="acc">Belfast</span></div>
+    <div class="sub">Skip the <span class="h">Instagram</span> hunt. Catch the newest café updates in one place.</div>
+  </div>
+
+  <!-- client-side search: matches name / area / address / postcode / tags / today's live update text -->
+  <div class="searchWrap reveal">
+    <div class="searchBar" id="searchBar">
+      <svg viewBox="0 0 19 19" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="8.5" cy="8.5" r="6.5"/><line x1="13.2" y1="13.2" x2="17" y2="17" stroke-linecap="round"/></svg>
+      <input type="text" id="searchInput" placeholder="Search cafés, areas, or updates" aria-label="Search cafés, areas, or updates" autocomplete="off">
+      <button type="button" class="clearBtn" id="searchClear" aria-label="Clear search">✕</button>
+    </div>
+    <div class="searchResults" id="searchResults" hidden></div>
+  </div>
+
+  <!-- tag chips are generated from CAFES.tags — "Open now" is a computed filter, not a stored tag.
+       Placed right under search so they read as "quick ways to search", not a separate section. -->
+  <div class="s1-chips reveal" id="chipRow"></div>
+
+  <div class="maparea reveal">
+    <div class="maphead"><span class="mh-l"><span class="mh-dd"></span>Cafés on the map</span><span class="mh-r" id="mapCount">—</span></div>
+    <div id="weecupMap"></div>
+    <div class="maplegend">
+      <span><i style="background:var(--tomato)"></i>closing / changed</span>
+      <span><i style="background:var(--moss)"></i>update today</span>
+      <span><i style="background:var(--ink-25)"></i>no news today</span>
+    </div>
+  </div>
+
+  <div class="today reveal">
+    <div class="th"><span class="l"><span class="dd"></span>Today · <span id="areaName">Belfast</span></span><span id="updCount">— updates</span></div>
+    <div class="meta" id="checkedLine">checked today</div>
+    <div class="todayScroll"><div id="liveList"><!-- filled from WEECUP.UPDATES, grouped by café --></div></div>
+  </div>
+
+  <!-- ===================== SCREENS "Where to now?" and café-card grid are
+       temporarily hidden for launch — kept out of the page, not deleted from
+       the project; can be switched back on later. ===================== -->
+
+  <!-- ===================== TODAY, BY TYPE (Tier-3 style index) ===================== -->
+  <div class="s4 reveal">
+    <div class="s4-h"><span>More today · by type</span><span>Tap to preview</span></div>
+    <div class="s4-idx" id="typeIndex"><!-- filled: accordion of type categories --></div>
+    <div class="s4-cta">
+      <div class="h">Get it before you head out</div>
+      <div class="p">Follow WeeCup for today's Belfast café updates — while we build following &amp; alerts.</div>
+      <div class="btns">
+        <a class="ig" id="igBtn" target="_blank" rel="noopener noreferrer">Follow on Instagram</a>
+        <a class="em" id="emBtn">Suggest a café</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot reveal">
+    <div class="fl">WeeCup Belfast</div>
+    <div class="fs">
+      Real-time café updates · covering <span id="areaName2">Belfast</span><br>
+      Updated by hand, checked before you head out · <a id="igFoot" target="_blank" rel="noopener noreferrer">Instagram</a>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var W = window.WEECUP || {CAFES:[],UPDATES:[]};
+  var CAFES = W.CAFES||[], UPDATES_RAW = W.UPDATES||[];
+  var typeLabel = {closure:"Closing / closed early", hours:"Changed hours", menu:"Fresh on the menu", event:"Events today", opening:"New openings / back on"};
+  var typeOrder = ["closure","hours","event","menu","opening"];
+  var srcLabel = {owner:"owner-synced", ig:"seen on IG", weecup:"WeeCup checked"};
+  var palette = {closure:'#C13B1B',hours:'#E0A020',menu:'#4A6B2E',event:'#1B6A72',opening:'#1B6A72'};
+  var esc = function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});};
+
+  // ---------- café lookup: by id (canonical) and by lower-cased name (for resolving UPDATES.cafe) ----------
+  var cafeById = {}, cafeByLowerName = {};
+  CAFES.forEach(function(c){
+    cafeById[c.id] = c;
+    if(c.name) cafeByLowerName[c.name.toLowerCase()] = c;
+  });
+  function resolveCafe(nameOrId){
+    if(!nameOrId) return null;
+    return cafeById[nameOrId] || cafeByLowerName[String(nameOrId).toLowerCase()] || null;
+  }
+
+  // ---------- expiry: default-by-type, with manual expiresAt always taking priority ----------
+  // Per-type default when no manual expiresAt is given. Anchored to the update's own publishedAt
+  // day (not "today at page-load"), so the default is a fixed, deterministic value once written.
+  // "event" has no generic default — only the person entering it knows when the event ends, so
+  // that must be set manually as expiresAt (this IS how "使用活动结束时间" gets implemented).
+  var TYPES_DEFAULTING_TO_END_OF_DAY = ["closure","hours","menu","opening"];
+  function getDefaultExpiry(update){
+    if(!update || !update.type) return null;
+    if(TYPES_DEFAULTING_TO_END_OF_DAY.indexOf(update.type) === -1) return null; // covers "event" and any unrecognised type
+    var anchor = update.publishedAt ? new Date(update.publishedAt) : new Date();
+    if(isNaN(anchor.getTime())) return null;
+    var endOfDay = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), 23, 59, 0, 0);
+    return endOfDay.toISOString();
+  }
+  // manual expiresAt → default-by-type → "" (existing behaviour: never expires). Called once per
+  // update when the data is loaded, so isExpired()/liveUpdates() below need no changes at all —
+  // they just see whichever expiresAt this resolves to.
+  function resolveExpiry(update){
+    if(update.expiresAt && !isNaN(new Date(update.expiresAt).getTime())) return update.expiresAt;
+    return getDefaultExpiry(update) || "";
+  }
+
+  // ---------- UK-format date/time display (ISO stays internal-only; nothing user-facing shows MM/DD) ----------
+  function pad2(n){ return (n<10?"0":"")+n; }
+  function formatUKDate(iso){
+    var d = new Date(iso); if(isNaN(d.getTime())) return "";
+    return pad2(d.getDate())+"/"+pad2(d.getMonth()+1)+"/"+d.getFullYear(); // DD/MM/YYYY
+  }
+  function formatUKTime(iso){
+    var d = new Date(iso); if(isNaN(d.getTime())) return "";
+    var h = d.getHours(), m = d.getMinutes(), ap = h>=12?'pm':'am', h12 = h%12; if(h12===0) h12=12;
+    return m===0 ? (h12+ap) : (h12+":"+pad2(m)+ap); // matches the site's existing "8am" / "5:30pm" style
+  }
+  function formatUKDateTime(iso){
+    var d = new Date(iso); if(isNaN(d.getTime())) return "";
+    return formatUKDate(iso)+" "+pad2(d.getHours())+":"+pad2(d.getMinutes()); // e.g. 17/09/2026 17:30
+  }
+
+  // resolve every update to its café's id up front — from here on, everything links by id, never by name string
+  var UPDATES = UPDATES_RAW.map(function(u){
+    var c = resolveCafe(u.cafe);
+    var resolved = { cafeId: c ? c.id : null, cafeName: c ? c.name : u.cafe, text:u.text, type:u.type, source:u.source, publishedAt:u.publishedAt, expiresAt:u.expiresAt };
+    resolved.expiresAt = resolveExpiry(resolved); // manual > default-by-type > never-expires, resolved once here
+    return resolved;
+  }).filter(function(u){ return !!u.cafeId; }); // an update whose café isn't found in CAFES is silently dropped rather than shown against a ghost name
+
+  // ---------- time helpers ----------
+  function relTime(iso){
+    if(!iso) return "";
+    var t = new Date(iso).getTime();
+    if(isNaN(t)) return "";
+    var mins = Math.round((Date.now()-t)/60000);
+    if(mins < 1) return "just now";
+    if(mins < 60) return mins+"m ago";
+    var hrs = Math.round(mins/60);
+    if(hrs < 24) return hrs+"h ago";
+    var days = Math.round(hrs/24);
+    return days+"d ago";
+  }
+  function isExpired(u){
+    if(!u.expiresAt) return false;
+    var t = new Date(u.expiresAt).getTime();
+    return !isNaN(t) && Date.now() > t;
+  }
+  // "live" updates = not expired — used everywhere a *current* status is shown (Today list, Tier-3, map colour).
+  // UPDATES itself (raw, unfiltered) is never mutated or deleted, per spec.
+  function liveUpdates(){ return UPDATES.filter(function(u){ return !isExpired(u); }); }
+
+  // ---------- opening-hours parsing → Open now / Closed (never guessed if unparseable) ----------
+  function parseHoursToken(tok){
+    var m = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i.exec(tok.trim());
+    if(!m) return null;
+    var h = parseInt(m[1],10), min = m[2]?parseInt(m[2],10):0, ap = m[3].toLowerCase();
+    if(h===12) h=0;
+    if(ap==='pm') h+=12;
+    return h*60+min;
+  }
+  function computeOpenNow(hoursStr){
+    if(!hoursStr) return null;
+    var parts = hoursStr.split(/[–-]/);
+    if(parts.length !== 2) return null;
+    var open = parseHoursToken(parts[0]), close = parseHoursToken(parts[1]);
+    if(open==null || close==null) return null;
+    var now = new Date(); var mins = now.getHours()*60+now.getMinutes();
+    if(close > open) return mins >= open && mins < close;
+    return mins >= open || mins < close; // overnight range
+  }
+  function formatHoursDisplay(c){
+    if(c.status) return null; // an explicit manual status overrides the computed/display hours line
+    if(!c.hours) return '<span class="muted">hours not listed yet</span>';
+    var open = computeOpenNow(c.hours);
+    var badge = open===null ? '' : ' <span class="popenbadge '+(open?'open':'closed')+'">'+(open?'Open now':'Closed')+'</span>';
+    return esc(c.hours)+badge;
+  }
+
+  // ---------- Instagram handle ----------
+  function igHandle(url){
+    if(!url) return null;
+    var m = /instagram\.com\/([^/?#]+)/i.exec(url);
+    return m ? '@'+m[1] : url;
+  }
+
+  // ---------- tags (deduplicated across CAFES, max 3 per café already enforced by data entry) ----------
+  var allTags = []; 
+  CAFES.forEach(function(c){ (c.tags||[]).slice(0,3).forEach(function(t){ if(allTags.indexOf(t)===-1) allTags.push(t); }); });
+
+  // ---------- filter state: search query + active tag(s) + open-now toggle ----------
+  var state = { q: "", tags: [], openNow: false };
+
+  function cafeMatchesQuery(c, live, q){
+    if(!q) return true;
+    q = q.toLowerCase();
+    var hay = [c.name, c.area, c.address, c.postcode].concat(c.tags||[]).concat(live.filter(function(u){return u.cafeId===c.id;}).map(function(u){return u.text;}));
+    return hay.some(function(v){ return v && String(v).toLowerCase().indexOf(q) !== -1; });
+  }
+  function cafeMatchesTags(c){
+    if(!state.tags.length) return true;
+    return state.tags.every(function(t){ return (c.tags||[]).indexOf(t) !== -1; });
+  }
+  function cafeMatchesOpenNow(c){
+    if(!state.openNow) return true;
+    return computeOpenNow(c.hours) === true;
+  }
+  function filteredCafes(){
+    var live = liveUpdates();
+    return CAFES.filter(function(c){ return cafeMatchesQuery(c, live, state.q) && cafeMatchesTags(c) && cafeMatchesOpenNow(c); });
+  }
+  var isFiltering = function(){ return !!(state.q || state.tags.length || state.openNow); };
+
+  // ---------- header/meta ----------
+  document.getElementById('areaName').textContent = W.AREA || "Belfast";
+  document.getElementById('areaName2').textContent = W.AREA || "Belfast";
+  function refreshTodayMeta(){
+    var live = liveUpdates();
+    document.getElementById('updCount').textContent = live.length + " update" + (live.length===1?"":"s");
+    document.getElementById('checkedLine').textContent = live.length
+        ? ("last checked " + (W.CHECKED_AT||"today"))
+        : "Quiet so far today — checked " + (W.CHECKED_AT||"today");
+  }
+
+  var ig = W.INSTAGRAM || "#", contact = W.CONTACT || "#";
+  ['igBtn','igFoot'].forEach(function(id){var e=document.getElementById(id); if(e) e.href=ig;});
+  document.getElementById('emBtn').href = contact;
+
+  // ================= TODAY (grouped by café, scrollable) — driven by liveUpdates() =================
+  function renderToday(){
+    var live = liveUpdates();
+    var list = document.getElementById('liveList');
+    if(!live.length){
+      list.innerHTML = '<div class="tgroup"><div class="rb"><div class="ru" style="color:var(--ink-45);font-style:italic">No updates yet today. Check back later — we update through the day.</div></div></div>';
+      return;
+    }
+    var orderedIds = [], byId = {};
+    live.forEach(function(u){ if(!byId[u.cafeId]){byId[u.cafeId]=[]; orderedIds.push(u.cafeId);} byId[u.cafeId].push(u); });
+    list.innerHTML = orderedIds.map(function(id){
+      var name = cafeById[id] ? cafeById[id].name : id;
+      var items = byId[id].map(function(u){
+        var sc = u.source==='ig'?'ig':(u.source==='weecup'?'weecup':'');
+        var t = relTime(u.publishedAt);
+        return '<div class="titem"><span class="tk '+esc(u.type)+'"></span><div class="rb">'
+          + '<div class="ru">'+esc(u.text)+'</div>'
+          + '<div class="rmeta"><span class="s '+sc+'">'+(srcLabel[u.source]||"")+'</span>'+(t?'<span>'+t+'</span>':'')+'</div>'
+          + '</div></div>';
+      }).join('');
+      return '<div class="tgroup"><div class="tg-name">'+esc(name)+'</div>'+items+'</div>';
+    }).join('');
+  }
+
+  // ================= "More today · by type" — Tier-3 accordion — driven by liveUpdates() =================
+  var srcBadge = {owner:{c:'✓',cls:'owner',label:'owner updated'}, ig:{c:'◉',cls:'ig',label:'seen on ig'}, weecup:{c:'W',cls:'',label:'weecup checked'}};
+  function renderTier3(){
+    var live = liveUpdates();
+    var groups = {}; live.forEach(function(u){ (groups[u.type]=groups[u.type]||[]).push(u); });
+    var presentTypes = typeOrder.filter(function(t){return groups[t] && groups[t].length;});
+    var idxEl = document.getElementById('typeIndex');
+    if(!presentTypes.length){
+      idxEl.innerHTML = '<div class="t3-group"><div class="t3-row" style="cursor:default;"><span style="color:var(--ink-45);font-style:italic;font-size:13px;">No updates yet today.</span></div></div>';
+      return;
+    }
+    idxEl.innerHTML = presentTypes.map(function(t,i){
+      var items = groups[t].map(function(u){
+        var b = srcBadge[u.source] || srcBadge.weecup;
+        var name = cafeById[u.cafeId] ? cafeById[u.cafeId].name : u.cafeName;
+        var rt = relTime(u.publishedAt);
+        return '<div class="t3-pitem"><div class="pn">'+esc(name)+'</div><div class="pt">'+esc(u.text)+'</div>'
+          + '<div class="pm"><span class="pdot" style="background:'+(palette[t]||'#4A6B2E')+'"></span>'+(rt?esc(rt):'')
+          + '<span class="badge '+b.cls+'"><span class="bc">'+b.c+'</span>'+b.label+'</span></div></div>';
+      }).join('');
+      return '<div class="t3-group'+(i===0?' open':'')+'" data-t3="'+t+'">'
+        + '<button class="t3-row" type="button" aria-expanded="'+(i===0?'true':'false')+'" onclick="weecupT3(this)">'
+          + '<span class="cl"><span class="tk" style="background:'+(palette[t]||'#4A6B2E')+'"></span><span class="nm">'+typeLabel[t]+'</span></span>'
+          + '<span class="rt"><span class="leader"></span><span class="cnt"><b>'+groups[t].length+'</b> today</span>'
+            + '<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3 11 8 6 13"/></svg></span>'
+        + '</button>'
+        + '<div class="t3-panel"><div class="t3-panel-inner">'+items+'</div></div>'
+      + '</div>';
+    }).join('');
+  }
+
+  // ================= tag / "Open now" filter chips =================
+  function renderChips(){
+    var row = document.getElementById('chipRow');
+    var html = '<button type="button" class="c'+(state.openNow?' active':'')+'" id="chipOpenNow"><span class="d"></span>Open now</button>';
+    html += allTags.map(function(t){
+      var on = state.tags.indexOf(t) !== -1;
+      return '<button type="button" class="c'+(on?' active':'')+'" data-tag="'+esc(t)+'">'+esc(t)+'</button>';
+    }).join('');
+    row.innerHTML = html;
+    document.getElementById('chipOpenNow').addEventListener('click', function(){
+      state.openNow = !state.openNow; renderChips(); runFilter();
+    });
+    row.querySelectorAll('button[data-tag]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var t = btn.getAttribute('data-tag');
+        var idx = state.tags.indexOf(t);
+        if(idx===-1) state.tags.push(t); else state.tags.splice(idx,1);
+        renderChips(); runFilter();
+      });
+    });
+  }
+
+  // ================= popup / mini-view builder — shared by map-marker click and search-result click =================
+  function currentUpdateFor(cafeId){
+    var live = liveUpdates().filter(function(u){ return u.cafeId===cafeId; });
+    return live.length ? live[0] : null;
+  }
+  function buildPopupHtml(c){
+    var u = currentUpdateFor(c.id);
+    var out = '<div class="wc-pop">';
+    out += '<div class="pn">'+esc(c.name)+'</div>';
+    var loc = c.address || c.area || '';
+    out += loc ? '<div class="pa">'+esc(loc)+(c.postcode?', '+esc(c.postcode):'')+'</div>' : '';
+    var hoursLine = formatHoursDisplay(c);
+    if(hoursLine !== null) out += '<div class="phours">'+hoursLine+'</div>';
+    else if(c.status) out += '<div class="phours">'+esc(c.status)+'</div>';
+    if(u){
+      var sc = u.source==='ig'?'ig':(u.source==='weecup'?'weecup':'');
+      var rt = relTime(u.publishedAt);
+      out += '<div class="pu" style="margin-top:7px;">'+esc(u.text)+'</div>';
+      out += '<div class="rmeta" style="margin-top:5px;"><span class="s '+sc+'">'+(srcLabel[u.source]||"")+'</span>'+(rt?'<span>'+rt+'</span>':'')+'</div>';
+    } else {
+      out += '<div class="pn-none" style="margin-top:7px;">No news today · usual hours</div>';
+    }
+    if((c.tags||[]).length){
+      out += '<div class="ptags">'+c.tags.slice(0,3).map(function(t){return '<span>'+esc(t)+'</span>';}).join('')+'</div>';
+    }
+    if(c.verifiedAt){
+      out += '<div class="pverified">Verified'+(c.verifiedBy?' by '+esc(c.verifiedBy):'')+' · '+relTime(c.verifiedAt)+'</div>';
+    }
+    var actions = [];
+    if(c.ig) actions.push('<a href="'+esc(c.ig)+'" target="_blank" rel="noopener noreferrer">Instagram →</a>');
+    if(c.googleMapsUrl) actions.push('<a href="'+esc(c.googleMapsUrl)+'" target="_blank" rel="noopener noreferrer">Google Maps →</a>');
+    if(actions.length) out += '<div class="pactions">'+actions.join('')+'</div>';
+    out += '</div>';
+    return out;
+  }
+
+  // ================= map (Leaflet) — shows every café with valid lat/lng, filtered set kept in sync =================
+  var map = null, markerLayer = null, markersById = {};
+  function initMap(){
+    var ctr = W.MAP_CENTER || {lat:54.5973,lng:-5.9301,zoom:14};
+    map = L.map('weecupMap',{scrollWheelZoom:false,attributionControl:true}).setView([ctr.lat,ctr.lng],ctr.zoom||14);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
+      maxZoom:19, subdomains:'abcd',
+      attribution:'&copy; OpenStreetMap &copy; CARTO'
+    }).addTo(map);
+    markerLayer = L.layerGroup().addTo(map);
+  }
+  function renderMarkers(fitBounds){
+    if(!map) return;
+    // remember which popup (if any) is currently open, so a background refresh doesn't slam it shut
+    var openId = null;
+    Object.keys(markersById).forEach(function(id){ if(markersById[id].isPopupOpen()) openId = id; });
+    markerLayer.clearLayers();
+    markersById = {};
+    var visible = filteredCafes().filter(function(c){ return typeof c.lat==='number' && typeof c.lng==='number'; });
+    document.getElementById('mapCount').textContent = visible.length + " café" + (visible.length===1?"":"s");
+    var bounds = [];
+    visible.forEach(function(c){
+      var u = currentUpdateFor(c.id);
+      var col = u ? (palette[u.type]||'#4A6B2E') : '#8a8272';
+      var icon = L.divIcon({className:'wc-marker', iconSize:[26,26], iconAnchor:[13,26],
+        html:'<div class="wc-pin" style="background:'+col+'"><span>'+esc(c.name.charAt(0))+'</span></div>'});
+      var marker = L.marker([c.lat,c.lng],{icon:icon}).addTo(markerLayer).bindPopup(buildPopupHtml(c));
+      markersById[c.id] = marker;
+      bounds.push([c.lat,c.lng]);
+      if(c.id === openId) marker.openPopup();
+    });
+    // only move/zoom the map when explicitly asked to (initial load, or the filter just changed) —
+    // never yank the view during the unattended 60s refresh
+    if(fitBounds && bounds.length>1){ try{ map.fitBounds(bounds,{padding:[40,40],maxZoom:15}); }catch(e){} }
+  }
+  function focusCafeOnMap(id){
+    var c = cafeById[id]; if(!c || typeof c.lat!=='number') return;
+    if(!map) return;
+    map.setView([c.lat,c.lng], Math.max(map.getZoom(),16));
+    var marker = markersById[id];
+    if(marker) marker.openPopup();
+  }
+
+  // ================= search =================
+  var searchInput = document.getElementById('searchInput');
+  var searchBar = document.getElementById('searchBar');
+  var searchClear = document.getElementById('searchClear');
+  var resultsEl = document.getElementById('searchResults');
+
+  // quick-search suggestions — built from real CAFES data (café names with a live update first,
+  // then area tokens, then real tags), never invented text. Shown when the box is focused and empty.
+  function buildSuggestions(){
+    var live = liveUpdates();
+    var pool = [];
+    live.forEach(function(u){ var c = cafeById[u.cafeId]; if(c && pool.indexOf(c.name)===-1) pool.push(c.name); });
+    CAFES.forEach(function(c){
+      if(c.area){ var tok = c.area.split('·')[0].trim(); if(tok && pool.indexOf(tok)===-1) pool.push(tok); }
+    });
+    allTags.forEach(function(t){ if(pool.indexOf(t)===-1) pool.push(t); });
+    var seen = {}, out = [];
+    pool.forEach(function(v){ var k=v.toLowerCase(); if(!seen[k] && out.length<5){ seen[k]=true; out.push(v); } });
+    return out;
+  }
+  function renderSuggestions(){
+    var sugg = buildSuggestions();
+    if(!sugg.length){ resultsEl.hidden = true; resultsEl.innerHTML=''; return; }
+    resultsEl.hidden = false;
+    resultsEl.innerHTML = '<div class="sr-suggest-label">Try searching</div><div class="sr-suggest-row">'
+      + sugg.map(function(s){ return '<button type="button" class="sr-chip" data-suggest="'+esc(s)+'">'+esc(s)+'</button>'; }).join('')
+      + '</div>';
+    resultsEl.querySelectorAll('.sr-chip').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var v = btn.getAttribute('data-suggest');
+        searchInput.value = v; state.q = v; searchBar.classList.add('hasQuery');
+        runFilter(); searchInput.focus();
+      });
+    });
+  }
+
+  function renderResults(){
+    if(!isFiltering()){
+      if(document.activeElement === searchInput) renderSuggestions();
+      else { resultsEl.hidden = true; resultsEl.innerHTML=''; }
+      return;
+    }
+    var matches = filteredCafes();
+    resultsEl.hidden = false;
+    if(!matches.length){
+      resultsEl.innerHTML = '<div class="sr-empty">No cafés found</div>';
+      return;
+    }
+    resultsEl.innerHTML = matches.map(function(c){
+      var u = currentUpdateFor(c.id);
+      var open = c.status ? null : computeOpenNow(c.hours);
+      var openBadge = open===null ? '' : ' <span class="sr-open-badge '+(open?'open':'closed')+'">'+(open?'Open':'Closed')+'</span>';
+      var tagsHtml = (c.tags||[]).length ? '<div class="srtags">'+c.tags.slice(0,3).map(function(t){return '<span>'+esc(t)+'</span>';}).join('')+'</div>' : '';
+      return '<button type="button" class="sr-item" data-id="'+esc(c.id)+'">'
+        + '<div class="srn">'+esc(c.name)+openBadge+'</div>'
+        + '<div class="sra">'+esc(c.area||'')+'</div>'
+        + (u ? '<div class="sru">'+esc(u.text)+'</div>' : '')
+        + tagsHtml
+        + '</button>';
+    }).join('');
+    resultsEl.querySelectorAll('.sr-item').forEach(function(btn){
+      btn.addEventListener('click', function(){ focusCafeOnMap(btn.getAttribute('data-id')); });
+    });
+  }
+
+  function runFilter(){ renderResults(); renderMarkers(true); }
+
+  searchInput.addEventListener('input', function(){
+    state.q = searchInput.value.trim();
+    searchBar.classList.toggle('hasQuery', !!state.q);
+    runFilter();
+  });
+  searchInput.addEventListener('keydown', function(e){
+    if(e.key === 'Enter'){
+      var first = resultsEl.querySelector('.sr-item, .sr-chip');
+      if(first) first.focus();
+    }
+  });
+  searchInput.addEventListener('focus', function(){
+    if(!isFiltering()) renderSuggestions();
+  });
+  searchInput.addEventListener('blur', function(){
+    // small delay so a click on a suggestion/result registers before we hide the panel
+    setTimeout(function(){
+      if(!isFiltering() && document.activeElement !== searchInput){ resultsEl.hidden = true; resultsEl.innerHTML=''; }
+    }, 150);
+  });
+  searchClear.addEventListener('click', function(){
+    searchInput.value = ''; state.q = ''; searchBar.classList.remove('hasQuery'); searchInput.focus(); renderSuggestions();
+  });
+
+  // ================= boot =================
+  refreshTodayMeta();
+  renderToday();
+  renderTier3();
+  renderChips();
+  if(window.L){ initMap(); renderMarkers(true); }
+  else { document.getElementById('mapCount').textContent = "—"; }
+
+  // relative times ("Nm/h ago") recompute periodically so they stay accurate without a page reload
+  setInterval(function(){ renderToday(); renderTier3(); refreshTodayMeta(); if(map) renderMarkers(false); }, 60000);
+})();
+</script>
+<script>
+  // scroll reveal: fade + rise each major section into place the first time it enters view
+  (function(){
+    var targets = document.querySelectorAll('.reveal');
+    if(!('IntersectionObserver' in window) || !targets.length){
+      targets.forEach(function(el){ el.classList.add('in'); });
+      return;
+    }
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(entry){
+        if(entry.isIntersecting){
+          entry.target.classList.add('in');
+          io.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    targets.forEach(function(el){ io.observe(el); });
+  })();
+</script>
+<script>
+  // Tier-3 accordion: clicking a category opens it and closes any other open one.
+  function weecupT3(btn){
+    var group = btn.closest('.t3-group');
+    var willOpen = !group.classList.contains('open');
+    document.querySelectorAll('.t3-group').forEach(function(g){
+      g.classList.remove('open');
+      var b = g.querySelector('.t3-row'); if(b) b.setAttribute('aria-expanded','false');
+    });
+    if(willOpen){
+      group.classList.add('open');
+      btn.setAttribute('aria-expanded','true');
+    }
+  }
+</script>
+</body>
+</html>
