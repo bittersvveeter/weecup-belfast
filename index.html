@@ -230,8 +230,10 @@ window.WEECUP = {
   .searchBar .clearBtn{display:none;background:none;border:none;color:var(--ink-45);cursor:pointer;padding:4px;font-size:14px;line-height:1;}
   .searchBar.hasQuery .clearBtn{display:block;}
   .searchBar input:focus-visible, .searchBar:focus-within{border-color:var(--moss);}
-  .searchResults{margin-top:10px;background:#fff;border:1px solid var(--ink-12);border-radius:14px;overflow:hidden;box-shadow:0 12px 30px -22px rgba(31,22,14,.35);}
+  .searchResults{position:absolute;left:0;right:0;top:calc(100% + 6px);margin-top:0;background:#fff;border:1px solid var(--ink-12);border-radius:14px;overflow:hidden;box-shadow:0 12px 30px -8px rgba(31,22,14,.22);z-index:200;max-height:60vh;overflow-y:auto;}
   .searchResults[hidden]{display:none;}
+  /* filter-results mode: in-flow below search bar, constrained height so map stays visible */
+  .searchResults.results-mode{position:static;max-height:200px;overflow-y:auto;margin:8px 0 0;z-index:0;border-radius:12px;box-shadow:0 4px 14px -6px rgba(31,22,14,.15);}
   .sr-item{display:block;width:100%;text-align:left;background:none;border:none;font:inherit;color:inherit;padding:12px 15px;cursor:pointer;border-bottom:1px solid var(--ink-07);}
   .sr-item:last-child{border-bottom:none;}
   .sr-item:hover, .sr-item:focus-visible{background:var(--paper-2);}
@@ -949,6 +951,7 @@ window.WEECUP = {
     return out;
   }
   function renderSuggestions(){
+    resultsEl.classList.remove('results-mode');
     var sugg = buildSuggestions();
     if(!sugg.length){ resultsEl.hidden = true; resultsEl.innerHTML=''; return; }
     resultsEl.hidden = false;
@@ -966,12 +969,22 @@ window.WEECUP = {
 
   function renderResults(){
     if(!isFiltering()){
+      resultsEl.classList.remove('results-mode');
       if(document.activeElement === searchInput) renderSuggestions();
       else { resultsEl.hidden = true; resultsEl.innerHTML=''; }
       return;
     }
+    var wasActive = resultsEl.classList.contains('results-mode');
+    resultsEl.classList.add('results-mode');
     var matches = filteredCafes();
     resultsEl.hidden = false;
+    // scroll so both the results list and map are visible together
+    if(!wasActive){
+      setTimeout(function(){
+        var sb = document.getElementById('searchBar');
+        if(sb) sb.scrollIntoView({behavior:'smooth', block:'start'});
+      }, 60);
+    }
     if(!matches.length){
       resultsEl.innerHTML = '<div class="sr-empty">No cafés found</div>';
       return;
@@ -1012,11 +1025,11 @@ window.WEECUP = {
   searchInput.addEventListener('blur', function(){
     // small delay so a click on a suggestion/result registers before we hide the panel
     setTimeout(function(){
-      if(!isFiltering() && document.activeElement !== searchInput){ resultsEl.hidden = true; resultsEl.innerHTML=''; }
+      if(!isFiltering() && document.activeElement !== searchInput){ resultsEl.hidden = true; resultsEl.innerHTML=''; resultsEl.classList.remove('results-mode'); }
     }, 150);
   });
   searchClear.addEventListener('click', function(){
-    searchInput.value = ''; state.q = ''; searchBar.classList.remove('hasQuery'); searchInput.focus(); renderSuggestions();
+    searchInput.value = ''; state.q = ''; searchBar.classList.remove('hasQuery'); resultsEl.classList.remove('results-mode'); searchInput.focus(); renderSuggestions();
   });
 
   // ================= boot =================
