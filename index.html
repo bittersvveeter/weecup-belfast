@@ -829,28 +829,39 @@ window.WEECUP = {
 
   // ================= "More today · by type" — Tier-3 accordion — driven by liveUpdates() =================
   var srcBadge = {owner:{c:'✓',cls:'owner',label:'owner updated'}, ig:{c:'◉',cls:'ig',label:'seen on ig'}, weecup:{c:'W',cls:'',label:'weecup checked'}};
+  // Types that always show a row even when empty (structural fixtures for the demo)
+  var alwaysShowTypes = ["hours","event","menu"];
   function renderTier3(){
     var live = liveUpdates();
     var groups = {}; live.forEach(function(u){ (groups[u.type]=groups[u.type]||[]).push(u); });
-    var presentTypes = typeOrder.filter(function(t){return groups[t] && groups[t].length;});
+    // Show types that have updates PLUS the always-show types (deduplicated, in typeOrder order)
+    var visibleSet = {};
+    typeOrder.forEach(function(t){
+      if((groups[t] && groups[t].length) || alwaysShowTypes.indexOf(t)!==-1) visibleSet[t]=true;
+    });
+    var visibleTypes = typeOrder.filter(function(t){ return visibleSet[t]; });
     var idxEl = document.getElementById('typeIndex');
-    if(!presentTypes.length){
+    if(!visibleTypes.length){
       idxEl.innerHTML = '<div class="t3-group"><div class="t3-row" style="cursor:default;"><span style="color:var(--ink-45);font-style:italic;font-size:13px;">No updates yet today.</span></div></div>';
       return;
     }
-    idxEl.innerHTML = presentTypes.map(function(t,i){
-      var items = groups[t].map(function(u){
+    idxEl.innerHTML = visibleTypes.map(function(t,i){
+      var hasItems = groups[t] && groups[t].length;
+      var items = hasItems ? groups[t].map(function(u){
         var b = srcBadge[u.source] || srcBadge.weecup;
         var name = cafeById[u.cafeId] ? cafeById[u.cafeId].name : u.cafeName;
         var rt = relTime(u.publishedAt);
         return '<div class="t3-pitem"><div class="pn">'+esc(name)+'</div><div class="pt">'+esc(u.text)+'</div>'
           + '<div class="pm"><span class="pdot" style="background:'+(palette[t]||'#4A6B2E')+'"></span>'+(rt?esc(rt):'')
           + '<span class="badge '+b.cls+'"><span class="bc">'+b.c+'</span>'+b.label+'</span></div></div>';
-      }).join('');
+      }).join('') : '<div class="t3-pitem"><div class="pt" style="color:var(--ink-45);font-style:italic">No updates yet today.</div></div>';
+      var countHtml = hasItems
+        ? '<span class="cnt"><b>'+groups[t].length+'</b> today</span>'
+        : '<span class="cnt" style="color:var(--ink-25)">—</span>';
       return '<div class="t3-group'+(i===0?' open':'')+'" data-t3="'+t+'">'
         + '<button class="t3-row" type="button" aria-expanded="'+(i===0?'true':'false')+'" onclick="weecupT3(this)">'
           + '<span class="cl"><span class="tk" style="background:'+(palette[t]||'#4A6B2E')+'"></span><span class="nm">'+typeLabel[t]+'</span></span>'
-          + '<span class="rt"><span class="leader"></span><span class="cnt"><b>'+groups[t].length+'</b> today</span>'
+          + '<span class="rt"><span class="leader"></span>'+countHtml
             + '<svg class="chev" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 3 11 8 6 13"/></svg></span>'
         + '</button>'
         + '<div class="t3-panel"><div class="t3-panel-inner">'+items+'</div></div>'
