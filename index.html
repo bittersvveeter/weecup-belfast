@@ -182,14 +182,17 @@ window.WEECUP = {
     { id:"gasworkscoffeehouse", name:"gasworkscoffeehouse", area:"City Centre", address:"16 Cromac Pl, Belfast", postcode:"BT7 2JB", ig:"", lat:54.5907812, lng:-5.9227631, hours:{ mon:"8am–3pm", tue:"8am–3pm", wed:"8am–3pm", thu:"8am–3pm", fri:"8am–3pm", sat:"Closed", sun:"Closed" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/qwnPK9x3zr1Wddqn9" },
     { id:"coopcoffee_co", name:"coopcoffee_co", area:"Unknown", address:"", postcode:"", ig:"https://www.instagram.com/coopcoffee_co/", lat:null, lng:null, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"" },
     { id:"augies_coffee", name:"augies_coffee", area:"Unknown", address:"", postcode:"", ig:"https://www.instagram.com/augies_coffee/", lat:null, lng:null, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"" },
-    { id:"Coffee & Clo", name:"Coffee & Clo", area:"West Belfast", address:"Blackstaff Mill, 81 Springfield Rd, Belfast", postcode:"BT12 7AE", ig:"https://www.instagram.com/coffee.clo/", lat:54.5975783, lng:-5.9580025, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/xP81drSaDcgc1fhU6" }
+    { id:"Coffee & Clo", name:"Coffee & Clo", area:"West Belfast", address:"Blackstaff Mill, 81 Springfield Rd, Belfast", postcode:"BT12 7AE", ig:"https://www.instagram.com/coffee.clo/", lat:54.5975783, lng:-5.9580025, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"https://maps.app.goo.gl/xP81drSaDcgc1fhU6" },
+    { id:"the-highwayman", name:"The Highwayman", area:"City Centre", address:"", postcode:"", ig:"", lat:null, lng:null, hours:{ mon:"", tue:"", wed:"", thu:"", fri:"", sat:"", sun:"" }, tags:[], status:"", website:"", googleMapsUrl:"" }
   ],
 
   // —— 今天的动态 ——
   // Add live updates here as { cafe, text, type, source, publishedAt, expiresAt }
   // type: closure / hours / menu / event / opening
   // source: owner / ig / weecup
-  UPDATES: []
+  UPDATES: [
+    { cafe:"The Highwayman", text:"Closed today.", type:"closure", source:"weecup", publishedAt:"2026-10-04T09:00:00Z", expiresAt:"" }
+  ]
 };
 </script>
 
@@ -253,7 +256,8 @@ window.WEECUP = {
   .sr-open-badge.open{background:rgba(74,107,46,.12);color:var(--moss);}
   .sr-open-badge.closed{background:rgba(193,59,27,.1);color:var(--tomato);}
 
-  .s1-chips{display:flex;gap:8px;margin:14px 22px 0;flex-wrap:wrap;}
+  .qf-label{font-family:var(--f-mo);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-45);margin:18px 22px 6px;}
+  .s1-chips{display:flex;gap:8px;margin:6px 22px 0;flex-wrap:wrap;}
   .s1-chips .c{background:#fff;border:1px solid var(--ink-12);border-radius:100px;padding:8px 14px;font-size:12px;color:var(--ink-80);display:inline-flex;align-items:center;gap:6px;font-family:var(--f-sa);cursor:pointer;}
   .s1-chips .c .d{width:5px;height:5px;border-radius:50%;background:var(--tomato);}
   .s1-chips .c:focus-visible{outline:2px solid var(--moss);outline-offset:2px;}
@@ -468,8 +472,8 @@ window.WEECUP = {
   </div>
 
   <div class="s1-hero reveal">
-    <div class="big">Real-time café updates<br>for <span class="acc">Belfast</span></div>
-    <div class="sub">Skip the <span class="h">Instagram</span> hunt. Catch the newest café updates in one place.</div>
+    <div class="big">Know before you go.</div>
+    <div class="sub">Belfast cafés, opening hours, and what's happening today — all in one place.</div>
   </div>
 
   <!-- client-side search: matches name / area / address / postcode / tags / today's live update text -->
@@ -482,8 +486,9 @@ window.WEECUP = {
     <div class="searchResults" id="searchResults" hidden></div>
   </div>
 
-  <!-- tag chips are generated from CAFES.tags — "Open now" is a computed filter, not a stored tag.
-       Placed right under search so they read as "quick ways to search", not a separate section. -->
+  <!-- Quick filters: Open now / Near me / Today + area chips + tag chips
+       Placed right under search. CAFES.tags data is preserved — only display/UX is changing here. -->
+  <div class="qf-label reveal">Quick filters</div>
   <div class="s1-chips reveal" id="chipRow"></div>
 
   <div class="maparea reveal">
@@ -729,7 +734,7 @@ window.WEECUP = {
   CAFES.forEach(function(c){ (c.tags||[]).slice(0,3).forEach(function(t){ if(allTags.indexOf(t)===-1) allTags.push(t); }); });
 
   // ---------- filter state: search query + active tag(s) + open-now toggle ----------
-  var state = { q: "", tags: [], openNow: false };
+  var state = { q: "", tags: [], openNow: false, today: false, area: null, nearMe: false, userLat: null, userLng: null };
 
   function cafeMatchesQuery(c, live, q){
     if(!q) return true;
@@ -745,11 +750,35 @@ window.WEECUP = {
     if(!state.openNow) return true;
     return computeOpenNow(c.hours) === true;
   }
+  function cafeMatchesToday(c){
+    if(!state.today) return true;
+    var live = liveUpdates();
+    return live.some(function(u){ return u.cafeId === c.id; });
+  }
+  function cafeMatchesArea(c){
+    if(!state.area) return true;
+    var a = state.area.toLowerCase();
+    return (c.area||'').toLowerCase().indexOf(a) !== -1 || (c.address||'').toLowerCase().indexOf(a) !== -1;
+  }
+  function cafeMatchesNearMe(c){
+    if(!state.nearMe) return true;
+    if(!state.userLat || !state.userLng) return true; // location not yet obtained — show all
+    if(!c.lat || !c.lng) return false; // café has no coords
+    var R = 3958.8; // Earth radius in miles
+    var dLat = (c.lat - state.userLat) * Math.PI / 180;
+    var dLng = (c.lng - state.userLng) * Math.PI / 180;
+    var a2 = Math.sin(dLat/2)*Math.sin(dLat/2) +
+      Math.cos(state.userLat * Math.PI/180) * Math.cos(c.lat * Math.PI/180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    return R * 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1-a2)) <= 0.5;
+  }
   function filteredCafes(){
     var live = liveUpdates();
-    return CAFES.filter(function(c){ return cafeMatchesQuery(c, live, state.q) && cafeMatchesTags(c) && cafeMatchesOpenNow(c); });
+    return CAFES.filter(function(c){
+      return cafeMatchesQuery(c, live, state.q) && cafeMatchesTags(c) && cafeMatchesOpenNow(c) && cafeMatchesToday(c) && cafeMatchesArea(c) && cafeMatchesNearMe(c);
+    });
   }
-  var isFiltering = function(){ return !!(state.q || state.tags.length || state.openNow); };
+  var isFiltering = function(){ return !!(state.q || state.tags.length || state.openNow || state.today || state.area || state.nearMe); };
 
   // ---------- header/meta ----------
   document.getElementById('areaName').textContent = W.AREA || "Belfast";
@@ -829,26 +858,69 @@ window.WEECUP = {
     }).join('');
   }
 
-  // ================= tag / "Open now" filter chips =================
+  // ================= Quick filter chips =================
+  // Priority 1: Open now / Near me / Today
+  // Priority 2: City Centre / Lisburn Road / Specialty coffee / Bakery
+  // CAFES.tags data is untouched — these chips surface existing tag + computed filters.
   function renderChips(){
     var row = document.getElementById('chipRow');
-    var html = '<button type="button" class="c'+(state.openNow?' active':'')+'" id="chipOpenNow"><span class="d"></span>Open now</button>';
-    html += allTags.map(function(t){
-      var on = state.tags.indexOf(t) !== -1;
-      return '<button type="button" class="c'+(on?' active':'')+'" data-tag="'+esc(t)+'">'+esc(t)+'</button>';
+    var chips = [
+      { id:'chipOpenNow',    label:'Open now',        dot:true,  active:state.openNow },
+      { id:'chipNearMe',     label:'Near me',         dot:false, active:state.nearMe },
+      { id:'chipToday',      label:'Today',           dot:false, active:state.today },
+      { id:'chipCityCentre', label:'City Centre',     dot:false, active:state.area==='city centre' },
+      { id:'chipLisburn',    label:'Lisburn Road',    dot:false, active:state.area==='lisburn' },
+      { id:'chipSpecialty',  label:'Specialty coffee',dot:false, active:state.tags.indexOf('specialty-coffee')!==-1 },
+      { id:'chipBakery',     label:'Bakery',          dot:false, active:state.tags.indexOf('bakery')!==-1 }
+    ];
+    row.innerHTML = chips.map(function(ch){
+      return '<button type="button" class="c'+(ch.active?' active':'')+'" id="'+esc(ch.id)+'">'+(ch.dot?'<span class="d"></span>':'')+esc(ch.label)+'</button>';
     }).join('');
-    row.innerHTML = html;
+
     document.getElementById('chipOpenNow').addEventListener('click', function(){
       state.openNow = !state.openNow; renderChips(); runFilter();
     });
-    row.querySelectorAll('button[data-tag]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        var t = btn.getAttribute('data-tag');
-        var idx = state.tags.indexOf(t);
-        if(idx===-1) state.tags.push(t); else state.tags.splice(idx,1);
-        renderChips(); runFilter();
-      });
+    document.getElementById('chipToday').addEventListener('click', function(){
+      state.today = !state.today; renderChips(); runFilter();
     });
+    document.getElementById('chipCityCentre').addEventListener('click', function(){
+      state.area = (state.area==='city centre') ? null : 'city centre'; renderChips(); runFilter();
+    });
+    document.getElementById('chipLisburn').addEventListener('click', function(){
+      state.area = (state.area==='lisburn') ? null : 'lisburn'; renderChips(); runFilter();
+    });
+    document.getElementById('chipSpecialty').addEventListener('click', function(){
+      var idx = state.tags.indexOf('specialty-coffee');
+      if(idx===-1) state.tags.push('specialty-coffee'); else state.tags.splice(idx,1);
+      renderChips(); runFilter();
+    });
+    document.getElementById('chipBakery').addEventListener('click', function(){
+      var idx = state.tags.indexOf('bakery');
+      if(idx===-1) state.tags.push('bakery'); else state.tags.splice(idx,1);
+      renderChips(); runFilter();
+    });
+
+    // Near me — uses browser Geolocation API (no third-party service)
+    document.getElementById('chipNearMe').addEventListener('click', function(){
+      if(state.nearMe){ state.nearMe = false; state.userLat = null; state.userLng = null; renderChips(); runFilter(); return; }
+      if(!navigator.geolocation){ setChipStatus('chipNearMe', 'Not available'); return; }
+      setChipStatus('chipNearMe', 'Locating…');
+      navigator.geolocation.getCurrentPosition(
+        function(pos){
+          state.userLat = pos.coords.latitude; state.userLng = pos.coords.longitude;
+          state.nearMe = true; renderChips(); runFilter();
+        },
+        function(){ state.nearMe = false; setChipStatus('chipNearMe', 'Location denied'); },
+        { timeout: 8000, maximumAge: 60000 }
+      );
+    });
+  }
+  function setChipStatus(id, msg){
+    var btn = document.getElementById(id);
+    if(!btn) return;
+    var orig = btn.textContent;
+    btn.textContent = msg; btn.disabled = true;
+    setTimeout(function(){ btn.disabled = false; btn.textContent = orig; }, 2200);
   }
 
   // ================= popup / mini-view builder — shared by map-marker click and search-result click =================
@@ -1029,7 +1101,8 @@ window.WEECUP = {
     }, 150);
   });
   searchClear.addEventListener('click', function(){
-    searchInput.value = ''; state.q = ''; searchBar.classList.remove('hasQuery'); resultsEl.classList.remove('results-mode'); searchInput.focus(); renderSuggestions();
+    searchInput.value = ''; state.q = ''; searchBar.classList.remove('hasQuery'); resultsEl.classList.remove('results-mode');
+    if(isFiltering()){ runFilter(); } else { searchInput.focus(); renderSuggestions(); }
   });
 
   // ================= boot =================
